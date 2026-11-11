@@ -1,0 +1,5 @@
+Reviewed-Content-Hash: Assets/Scripts/UI/HUD/CombatHudPresenter.cs 2081a190eae118c5b70ad6733f557b1e4902b023
+Reviewed-Content-Hash: Assets/Scripts/UI/HUD/KillFeedPoolView.cs 26da0e21db99bdf0cffdd9b91b23ddd7eddc42ed
+Reviewed-Content-Hash: Assets/Scenes/Arena.unity d7a16a55b2c8156ebfb6088c0ea540b014692ce3
+Reviewed-Content-Hash: production/qa/evidence/story-003-event-driven-screen-space-combat-hud/01-combat-hud-active-lowhp-killfeed.png 8919f2f38fd907f335d730c381204af470592542
+Reviewed-Content-Hash: production/qa/evidence/story-003-event-driven-screen-space-combat-hud/02-combat-hud-victory-modal.png 765af038077f6ec3032952c8a3afefa493525c47

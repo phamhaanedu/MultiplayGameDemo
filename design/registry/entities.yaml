@@ -1,0 +1,570 @@
+# Game World Entity Registry
+#
+# PURPOSE: Single source of truth for all named game-world facts that appear
+# in more than one document. Skills check this before writing new content to
+# detect cross-doc inconsistencies at authoring time.
+#
+# RULES:
+#   - Only register facts that cross system boundaries. Internal-only facts
+#     (a formula used in one GDD only) do NOT need to be registered.
+#   - Never delete entries — set status: deprecated instead.
+#   - When a value changes: update the value, set revised: to today's date,
+#     and add a comment with the old value and which GDD changed it.
+#   - source: is the authoritative GDD — the one that "owns" this fact.
+#     Other GDDs that reference it list themselves in referenced_by.
+#   - When a new GDD references an existing entry, append its path to
+#     referenced_by. Do not create a duplicate entry.
+#
+# WRITTEN BY: /design-system (Phase 5 — after GDD sections are approved)
+#             /consistency-check (when resolving conflicts)
+#             economy-designer, systems-designer (new cross-system entries,
+#               after asking)
+# READ BY:    /design-system (Phase 2 — before authoring begins, and after
+#               Section C/D writes to conflict-check new entities/formulas)
+#             /consistency-check (primary input — grep-first, GDD-second)
+#             /review-all-gdds (Phase 1 — baseline for Phase 2 checks)
+#             /design-review (Phase 1 — cross-doc facts, in place of sibling GDDs)
+#             /content-audit (Step 2 — planned named-content count)
+#             /balance-check (Phase 3 — intended constant/formula values)
+#             /propagate-design-change (Step 3 — downstream GDD impact via referenced_by)
+#             /asset-spec (named entities to write specs for)
+#             economy-designer, systems-designer (before authoring items,
+#               loot tables and formulas)
+#
+# SEARCH PATTERNS (for skills using Grep):
+#   All entity names:        Grep pattern="^  - name:" path="design/registry/entities.yaml"
+#   Specific entity:         Grep pattern="  - name: goblin" path="design/registry/entities.yaml"
+#   All items:               Grep pattern="^  - name:" path="design/registry/entities.yaml" (items section)
+#   What combat.md owns:     Grep pattern="source: design/gdd/combat.md"
+#   What inventory.md uses:  Grep pattern="design/gdd/inventory.md" -B 8
+#                            (referenced_by is a block list, so match the
+#                            path; referenced_by.*inventory never matches)
+#   All gold values:          Grep pattern="value_gold:"
+#   Deprecated entries:      Grep pattern="status: deprecated"
+#
+# FORMAT: YAML. Consistent indentation is critical for grep reliability.
+#   Sections: entities | items | formulas | constants
+#   Each entry: name, status, source, referenced_by[], attributes{}, added, revised
+#
+# LAYOUT: the one shape .claude/scripts/registry.sh reads. Each section is a
+#   key at column 0 holding a block list, or [] while it is empty. Each entry
+#   starts "- name: <name>" with the dash at column 2 (or 0, the same for every
+#   entry of a section); its fields sit two columns past the dash, and a deeper
+#   line belongs to the field above it. Quote a value that holds ": ". A line
+#   in any other shape is reported as unsupported layout, with its number.
+
+version: 1
+last_updated: "2026-11-10"
+
+# ─── ENTITIES ────────────────────────────────────────────────────────────────
+# Named game-world objects: enemies, NPCs, characters, factions, bosses.
+# Register an entity here when it appears in more than one GDD — e.g., an
+# enemy defined in combat.md that also drops items listed in inventory.md.
+#
+# Required fields: name, status, source, referenced_by, added
+# Attribute fields: any key stats that could appear in another GDD
+#   (health, damage, drops, faction, etc.)
+
+entities:
+  - name: player_capsule
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/arena-level-architecture.md
+      - design/gdd/keybinding-input-system.md
+      - design/gdd/shared-mode-session-pool.md
+      - design/gdd/character-movement-mobility.md
+      - design/gdd/health-damage-rpc-system.md
+      - design/gdd/combat-melee-ranged-system.md
+      - design/gdd/combat-hud-mobile-action-pad.md
+      - design/gdd/camera-fps-tps-spectator.md
+      - design/gdd/match-manager-authority-failover.md
+      - design/gdd/spatial-audio-combat-vfx.md
+      - design/gdd/game-concept.md
+      - design/art/art-bible.md
+    max_health: 100
+    move_speed: 6.5
+    dash_speed: 16.0
+    dodge_speed: 12.0
+    melee_range: 2.80
+    vertical_slash_damage: 35
+    horizontal_slash_damage: 25
+    ranged_damage: 20
+    added: 2026-11-10
+    revised: ""
+
+  - name: ranged_orb_projectile
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/arena-level-architecture.md
+      - design/gdd/shared-mode-session-pool.md
+      - design/gdd/combat-melee-ranged-system.md
+      - design/gdd/spatial-audio-combat-vfx.md
+      - design/gdd/game-concept.md
+      - design/art/art-bible.md
+    damage: 20
+    speed: 22.0
+    max_distance: 26.0
+    radius: 0.20
+    lifetime_seconds: 1.1818
+    added: 2026-11-10
+    revised: ""
+
+
+# ─── ITEMS ───────────────────────────────────────────────────────────────────
+# Named collectables, equipment, consumables, crafting materials, currency.
+# Register an item when its name or value appears in more than one GDD.
+#
+# Required fields: name, status, source, referenced_by, added
+# Attribute fields: value_gold, weight, stackable, category, and any stat
+#   modifiers that another system (e.g., economy, crafting) might reference.
+
+items: []
+
+
+# ─── FORMULAS ────────────────────────────────────────────────────────────────
+# Named calculations with defined variables and output ranges.
+# Register a formula when its output feeds into another system's input,
+# or when another GDD references it by name.
+#
+# Required fields: name, status, source, referenced_by, variables[],
+#   output_range[min, max], added
+# Optional: expression (the actual formula), notes
+
+formulas:
+  - name: skill_duration_ticks
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    variables:
+      - duration_seconds
+      - tick_rate
+    output_range: [5, 600]
+    expression: "ceil(duration_seconds * tick_rate)"
+    notes: "Converts seconds in CharacterCombatConfigSO to 60Hz Photon Fusion 2 simulation ticks."
+    added: 2026-11-10
+    revised: ""
+
+  - name: mobility_displacement
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    variables:
+      - mobility_speed
+      - mobility_duration
+      - tick_rate
+    output_range: [0.80, 18.0]
+    expression: "mobility_speed * (ceil(mobility_duration * tick_rate) / tick_rate)"
+    notes: "Forward Dash [2] = 4.00m (15 ticks); Side Dodge Roll [Q/E] = 2.80m (14 ticks)."
+    added: 2026-11-10
+    revised: ""
+
+  - name: horizontal_turn_step_angle
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    variables:
+      - turn_direction_sign
+      - HorizontalSlashAngle
+      - HorizontalTurnDuration
+      - tick_rate
+    output_range: [-25.0, 25.0]
+    expression: "turn_direction_sign * (HorizontalSlashAngle / ceil(HorizontalTurnDuration * tick_rate))"
+    notes: "Default 90 deg over 0.15s (9 ticks at 60Hz) = +/-10.0 deg/tick for both Character and Camera Yaw."
+    added: 2026-11-10
+    revised: ""
+
+  - name: projectile_lifetime_seconds
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    variables:
+      - ProjectileMaxDistance
+      - ProjectileSpeed
+    output_range: [0.20, 6.00]
+    expression: "ProjectileMaxDistance / ProjectileSpeed"
+    notes: "Default 26.0m / 22.0 m/s = 1.1818s (71 ticks at 60Hz) before returning to INetworkObjectProvider pool."
+    added: 2026-11-10
+    revised: ""
+
+  - name: ranged_evasion_reaction_window
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    variables:
+      - target_distance
+      - ProjectileSpeed
+      - network_rtt_ms
+    output_range: [0.05, 2.50]
+    expression: "(target_distance / ProjectileSpeed) - (network_rtt_ms / 2000.0)"
+    notes: "Validates Pillar 1 evasion window (~0.57s at 13.2m with 60ms RTT)."
+    added: 2026-11-10
+    revised: ""
+
+  - name: hits_to_kill
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    variables:
+      - MaxHealth
+      - attack_damage
+    output_range: [1, 100]
+    expression: "ceil(MaxHealth / attack_damage)"
+    notes: "Vertical Slash = 3 hits (35 dmg); Horizontal Slash = 4 hits (25 dmg); Ranged Attack = 5 hits (20 dmg)."
+    added: 2026-11-10
+    revised: ""
+
+  - name: theoretical_ttk
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    variables:
+      - hits_to_kill
+      - attack_cooldown
+    output_range: [0.00, 60.0]
+    expression: "(hits_to_kill - 1) * attack_cooldown"
+    notes: "Vertical Slash TTK = 1.30s; Horizontal Slash TTK = 2.55s; Ranged Attack TTK = 2.20s."
+    added: 2026-11-10
+    revised: ""
+
+
+# ─── CONSTANTS ───────────────────────────────────────────────────────────────
+# Named numerical values referenced across multiple systems.
+# Register a constant when it is defined in one GDD but another GDD must
+# agree with it (e.g., gold carry limit defined in economy but checked in
+# inventory, or base inventory slots defined in inventory but displayed in HUD).
+#
+# Required fields: name, status, source, referenced_by, value, unit, added
+
+constants:
+  - name: max_health
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+      - design/art/art-bible.md
+    value: 100
+    unit: HP
+    added: 2026-11-10
+    revised: ""
+
+  - name: move_speed
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 6.5
+    unit: m/s
+    added: 2026-11-10
+    revised: ""
+
+  - name: rotation_sensitivity
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+    value: 1.0
+    unit: multiplier
+    added: 2026-11-10
+    revised: ""
+
+  - name: dash_speed
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 16.0
+    unit: m/s
+    added: 2026-11-10
+    revised: ""
+
+  - name: dash_duration
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 0.25
+    unit: seconds
+    added: 2026-11-10
+    revised: ""
+
+  - name: dash_cooldown
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 2.50
+    unit: seconds
+    added: 2026-11-10
+    revised: ""
+
+  - name: dodge_speed
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 12.0
+    unit: m/s
+    added: 2026-11-10
+    revised: ""
+
+  - name: dodge_duration
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 0.22
+    unit: seconds
+    added: 2026-11-10
+    revised: ""
+
+  - name: dodge_cooldown
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 1.80
+    unit: seconds
+    added: 2026-11-10
+    revised: ""
+
+  - name: melee_range
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 2.80
+    unit: meters
+    added: 2026-11-10
+    revised: ""
+
+  - name: vertical_slash_damage
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 35
+    unit: HP
+    added: 2026-11-10
+    revised: ""
+
+  - name: vertical_slash_angle
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+      - design/art/art-bible.md
+    value: 45.0
+    unit: degrees
+    added: 2026-11-10
+    revised: ""
+
+  - name: vertical_slash_cooldown
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 0.65
+    unit: seconds
+    added: 2026-11-10
+    revised: ""
+
+  - name: horizontal_slash_damage
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 25
+    unit: HP
+    added: 2026-11-10
+    revised: ""
+
+  - name: horizontal_slash_angle
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+      - design/art/art-bible.md
+    value: 90.0
+    unit: degrees
+    added: 2026-11-10
+    revised: ""
+
+  - name: horizontal_turn_duration
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 0.15
+    unit: seconds
+    added: 2026-11-10
+    revised: ""
+
+  - name: horizontal_slash_cooldown
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 0.85
+    unit: seconds
+    added: 2026-11-10
+    revised: ""
+
+  - name: ranged_damage
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 20
+    unit: HP
+    added: 2026-11-10
+    revised: ""
+
+  - name: projectile_speed
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 22.0
+    unit: m/s
+    added: 2026-11-10
+    revised: ""
+
+  - name: projectile_max_distance
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 26.0
+    unit: meters
+    added: 2026-11-10
+    revised: ""
+
+  - name: projectile_radius
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/game-concept.md
+    value: 0.20
+    unit: meters
+    added: 2026-11-10
+    revised: ""
+
+  - name: ranged_cooldown
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/shared-mode-session-pool.md
+      - design/gdd/combat-melee-ranged-system.md
+      - design/gdd/combat-hud-mobile-action-pad.md
+      - design/gdd/game-concept.md
+    value: 0.55
+    unit: seconds
+    added: 2026-11-10
+    revised: ""
+
+  - name: arena_size
+    status: active
+    source: design/gdd/arena-level-architecture.md
+    referenced_by:
+      - design/gdd/arena-level-architecture.md
+      - design/gdd/shared-mode-session-pool.md
+      - design/gdd/game-concept.md
+    value: 40.0
+    unit: meters
+    added: 2026-11-10
+    revised: ""
+
+  - name: prewarm_pool_count
+    status: active
+    source: design/gdd/shared-mode-session-pool.md
+    referenced_by:
+      - design/gdd/shared-mode-session-pool.md
+      - design/gdd/combat-melee-ranged-system.md
+    value: 32
+    unit: instances
+    added: 2026-11-10
+    revised: ""
+
+  - name: max_players_per_room
+    status: active
+    source: design/gdd/shared-mode-session-pool.md
+    referenced_by:
+      - design/gdd/shared-mode-session-pool.md
+      - design/gdd/match-manager-authority-failover.md
+      - design/gdd/combat-hud-mobile-action-pad.md
+    value: 8
+    unit: players
+    added: 2026-11-10
+    revised: ""
+
+  - name: match_duration_seconds
+    status: active
+    source: design/gdd/match-manager-authority-failover.md
+    referenced_by:
+      - design/gdd/match-manager-authority-failover.md
+      - design/gdd/combat-hud-mobile-action-pad.md
+    value: 240.0
+    unit: seconds
+    added: 2026-11-10
+    revised: ""
+
+  - name: billboard_height_offset
+    status: active
+    source: design/gdd/combat-hud-mobile-action-pad.md
+    referenced_by:
+      - design/gdd/combat-hud-mobile-action-pad.md
+      - design/gdd/arena-level-architecture.md
+      - design/gdd/camera-fps-tps-spectator.md
+    value: 2.35
+    unit: meters
+    added: 2026-11-10
+    revised: ""
+
+  - name: max_chat_message_length
+    status: active
+    source: design/gdd/in-game-chat-system.md
+    referenced_by:
+      - design/gdd/in-game-chat-system.md
+    value: 120
+    unit: characters
+    added: 2026-11-10
+    revised: ""

@@ -1,0 +1,361 @@
+# Technical Requirement ID Registry
+#
+# PURPOSE: Persistent, stable IDs for every GDD technical requirement.
+# Prevents TR-ID renumbering across /architecture-review runs, which would
+# break story references.
+#
+# LAYOUT: the one shape .claude/scripts/registry.sh reads.
+
+version: 1
+last_updated: "2026-11-10"
+
+requirements:
+  # --- System #1: Character & Combat Stats Config (SO) ---
+  - id: TR-config-001
+    system: config
+    gdd: design/gdd/character-combat-config.md
+    requirement: "CharacterCombatConfigSO must expose read-only public C# properties backed by [SerializeField] private fields with OnValidate() clamping and zero runtime heap allocation on 60Hz FixedUpdateNetwork reads"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-config-002
+    system: config
+    gdd: design/gdd/character-combat-config.md
+    requirement: "CharacterCombatConfigSO must precompute derived tick and cosine thresholds (DashTicks=12, DodgeTicks=15, VerticalSlashCosHalfAngle=0.9063078, HorizontalSweepCosHalfAngle=0.7071068) in OnEnable() and OnValidate()"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-config-003
+    system: config
+    gdd: design/gdd/character-combat-config.md
+    requirement: "DefaultCapsuleCombatConfig.asset must enforce canonical combat balance (MaxHP=100, MoveSpeed=6.0, DashSpeed=18.0, DodgeSpeed=12.0, VerticalDamage=25, HorizontalDamage=30, RangedDamage=15)"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #2: Arena Level & Obstacle Architecture ---
+  - id: TR-arena-001
+    system: arena
+    gdd: design/gdd/arena-level-architecture.md
+    requirement: "Arena geometry must be a 40m x 40m symmetric tactical courtyard with a 2.5m high perimeter wall, central altar, 4 L-walls, and 8 cover pillars on Layer 6 (EnvironmentWall) and Layer 9 (ArenaFloor)"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-arena-002
+    system: arena
+    gdd: design/gdd/arena-level-architecture.md
+    requirement: "ArenaSpawnManager must select one of 8 perimeter SpawnPoint transforms (16m radius) maximizing minimum Euclidean distance to all living players with deterministic Round-Robin fallback on first spawn"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-arena-003
+    system: arena
+    gdd: design/gdd/arena-level-architecture.md
+    requirement: "Physics Layer Collision Matrix and LineOfSightMask (1 << 6) must block melee sectors, projectiles, and TPS camera booms on Layer 6 while allowing Layer 10 GhostSpectator to pass through Layer 6 and collide with Layer 9"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #3: Keybinding & Input System (JSON + Mobile Ready) ---
+  - id: TR-input-001
+    system: input
+    gdd: design/gdd/keybinding-input-system.md
+    requirement: "KeybindingManager must persist 13 game actions in Application.persistentDataPath/keybindings.json with atomic .tmp write, corrupt JSON auto-recovery, and OnBindingsChanged C# event dispatch"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-input-002
+    system: input
+    gdd: design/gdd/keybinding-input-system.md
+    requirement: "LocalInputPoller must merge desktop InputAction state with MobileInputBridge flags via bitwise OR into a 16-byte NetworkInputData struct (MoveDirection, LookYaw, LookPitch, NetworkButtons)"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-input-003
+    system: input
+    gdd: design/gdd/keybinding-input-system.md
+    requirement: "InputFocusManager must suppress gameplay ActionMap and zero out NetworkInputData when ChatFocused, RebindModalOpen, or MatchEnded flags are active"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #4: Shared Mode Session & Object Pool Architecture ---
+  - id: TR-session-001
+    system: session
+    gdd: design/gdd/shared-mode-session-pool.md
+    requirement: "FusionSessionManager must start Photon Fusion 2 in GameMode.Shared at 60Hz tick rate (AppId fbee3c4f-1f3b-42da-80b9-0e4d2b47f3a9) with MaxPlayers=4 and spawn local player via OnPlayerJoined"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-session-002
+    system: session
+    gdd: design/gdd/shared-mode-session-pool.md
+    requirement: "FusionObjectPoolProvider must implement INetworkObjectProvider and pre-warm 32 NetworkProjectile instances plus 36 local VFX/SFX pooled objects at scene load with zero runtime Instantiate/Destroy in combat"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-session-003
+    system: session
+    gdd: design/gdd/shared-mode-session-pool.md
+    requirement: "NetworkProjectile lifecycle must reset TrailRenderer, Rigidbody velocity, and ExpiryTimer on pool acquire/release and automatically despawn back to pool after 120 ticks (2.0s) or collision"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #5: Character Movement & Mobility (Dash & Dodge Roll) ---
+  - id: TR-move-001
+    system: move
+    gdd: design/gdd/character-movement-mobility.md
+    requirement: "PlayerMovementController must execute 60Hz FixedUpdateNetwork locomotion at MoveSpeed=6.0m/s, JumpImpulse=7.5m/s, and Gravity=-19.62m/s2 with 0.10s coyote time and 0.10s jump buffer"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-move-002
+    system: move
+    gdd: design/gdd/character-movement-mobility.md
+    requirement: "Forward Dash (Key 2) must propel the capsule along horizontal forward at DashSpeed=18.0m/s for 0.20s (12 ticks, 3.6m) with a 2.50s TickTimer cooldown and wall slide projection via Physics.CapsuleCastNonAlloc"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-move-003
+    system: move
+    gdd: design/gdd/character-movement-mobility.md
+    requirement: "Dodge Roll Left/Right (Keys Q/E) must strafe at DodgeSpeed=12.0m/s for 0.25s (15 ticks, 3.0m) with a shared 1.80s TickTimer cooldown, mutual exclusion with Dash, and DOTween visual tilt/squash on ChildVisualRoot"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #6: Health, Damage RPC & Death State Machine ---
+  - id: TR-health-001
+    system: health
+    gdd: design/gdd/health-damage-rpc-system.md
+    requirement: "PlayerHealthController must synchronize [Networked] CurrentHP (0..100) and [Networked] IsAlive with write authority restricted strictly to the victim's Object.HasStateAuthority"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-health-002
+    system: health
+    gdd: design/gdd/health-damage-rpc-system.md
+    requirement: "Rpc_RequestTakeDamage(int rawDamage, byte attackType, PlayerRef attacker, int attackTick) must route from [RpcSources.All] to [RpcTargets.StateAuthority] and validate IsAlive, MatchState==Playing, and distance tolerance before deducting HP"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-health-003
+    system: health
+    gdd: design/gdd/health-damage-rpc-system.md
+    requirement: "Transitioning to CurrentHP==0 must set IsAlive=false, switch physics layer to Layer 10 (GhostSpectator), disable combat hitboxes, and broadcast Rpc_NotifyKillConfirmed to all peers"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #7: Multi-Directional Melee & Ranged Combat ---
+  - id: TR-combat-001
+    system: combat
+    gdd: design/gdd/combat-melee-ranged-system.md
+    requirement: "Vertical Slash (LMB, 25 dmg, 0.55s CD) and Horizontal Sweep Left/Right (Keys 1/3, 30 dmg, 1.20s shared CD) must evaluate sector hits using zero-alloc Physics.OverlapSphereNonAlloc (radius 2.4m/2.6m), planar dot product, and LineOfSightMask raycast"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-combat-002
+    system: combat
+    gdd: design/gdd/combat-melee-ranged-system.md
+    requirement: "Horizontal Sweep Left (Key 1, s=-1) and Right (Key 3, s=+1) must apply a synchronized 90-degree snap-turn (TargetYaw = StartYaw + s * 90 deg) over 0.18s (11 ticks) in FixedUpdateNetwork and drive CameraController yaw smoothly"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-combat-003
+    system: combat
+    gdd: design/gdd/combat-melee-ranged-system.md
+    requirement: "Ranged Fire (RMB, 15 dmg, 0.75s CD) must acquire a pooled NetworkProjectile at MuzzleOffset=(0, 1.1, 0.75) travelling at 28.0m/s for up to 28.0m (120 ticks) with client-side visual prediction and single-hit consumption"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #8: Combat HUD, Billboard & Mobile Action Pad ---
+  - id: TR-hud-001
+    system: hud
+    gdd: design/gdd/combat-hud-mobile-action-pad.md
+    requirement: "WorldSpaceBillboardUI must orient toward Camera.main in LateUpdate, render HP fill with 0.25s ghost damage trail, and enforce distinct local (#22C55E) vs enemy (#EF4444) color palettes"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-hud-002
+    system: hud
+    gdd: design/gdd/combat-hud-mobile-action-pad.md
+    requirement: "MobileActionPadView must provide a 7-button radial cluster in the bottom-right corner with radial fill cooldown overlays, remaining seconds text, keybind badges, and dual PointerDown/Keybind pulse feedback"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-hud-003
+    system: hud
+    gdd: design/gdd/combat-hud-mobile-action-pad.md
+    requirement: "ScreenSpaceCombatHUD must update HP bar, AliveCounter, KillFeed (max 4 entries), and DirectionalHitVignette strictly via C# Observer events and OnChangedRender callbacks without per-frame Find or GetComponent calls"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #9: Dual-Perspective Camera (FPS/TPS) & Ghost Spectator ---
+  - id: TR-camera-001
+    system: camera
+    gdd: design/gdd/camera-fps-tps-spectator.md
+    requirement: "DualPerspectiveCameraController must toggle between TPS (boom 4.5m, shoulder offset 0.65m, height 1.6m, FOV 65) and FPS (eye height 1.55m, FOV 80, local head/visor hidden) within 0.20s on Key V"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-camera-002
+    system: camera
+    gdd: design/gdd/camera-fps-tps-spectator.md
+    requirement: "TPS camera boom must prevent wall clipping using Physics.SphereCast (radius 0.22m, MinCameraDistance 0.60m) against Layer 6 (EnvironmentWall) with immediate pull-in and smoothed push-out"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-camera-003
+    system: camera
+    gdd: design/gdd/camera-fps-tps-spectator.md
+    requirement: "Upon local player death (IsAlive==false), GhostSpectatorController must enable free-roam ghost movement at 9.0m/s, apply #38BDF8 fresnel ghost shader, and allow Tab cycling through living players in TPS follow mode"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #10: Match Manager, Last Man Standing & Authority Failover ---
+  - id: TR-match-001
+    system: match
+    gdd: design/gdd/match-manager-authority-failover.md
+    requirement: "MatchManager must synchronize [Networked] MatchState (WaitingForPlayers, Countdown, Playing, MatchOver), AliveCount, WinnerPlayerRef, and PhaseTimer across all peers in the session"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-match-002
+    system: match
+    gdd: design/gdd/match-manager-authority-failover.md
+    requirement: "MatchManager must evaluate Last Man Standing win conditions when AliveCount <= 1 during Playing state (including simultaneous double-KO draw handling) and transition to MatchOver with podium celebration"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-match-003
+    system: match
+    gdd: design/gdd/match-manager-authority-failover.md
+    requirement: "When the current StateAuthority peer disconnects, the remaining peer with Runner.IsSharedModeMasterClient must invoke Object.RequestStateAuthority() on MatchManager and resume match state evaluation without resetting timers or scores"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #11: Keybinding Rebind UI & Lobby Flow ---
+  - id: TR-rebind-001
+    system: rebind
+    gdd: design/gdd/keybinding-rebind-lobby-ui.md
+    requirement: "LobbyFlowController must orchestrate Title/Login, Main Lobby, Room Waiting, and Settings Modal screens with reactive connection status and zero scene-reload overhead on modal transitions"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-rebind-002
+    system: rebind
+    gdd: design/gdd/keybinding-rebind-lobby-ui.md
+    requirement: "KeybindingRebindModal must support interactive key/mouse capture with a 5.0s timeout, Esc cancel, reserved key rejection, automatic swap-on-conflict with amber highlight (#F59E0B), and Reset to Defaults"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-rebind-003
+    system: rebind
+    gdd: design/gdd/keybinding-rebind-lobby-ui.md
+    requirement: "MobileActionPadVisibilityMode (Auto, AlwaysOn, Off) must persist in settings and immediately toggle the on-screen 7-button combat pad in both Lobby preview and Arena HUD"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #12: In-Game Public & Whisper Chat System ---
+  - id: TR-chat-001
+    system: chat
+    gdd: design/gdd/in-game-chat-system.md
+    requirement: "InGameChatController must keep its root GameObject active at all times and control panel visibility strictly via CanvasGroup (alpha, interactable, blocksRaycasts) so Photon Fusion RPCs never drop when the chat UI is faded"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-chat-002
+    system: chat
+    gdd: design/gdd/in-game-chat-system.md
+    requirement: "Chat parser must support Public messages and private Whisper commands (/w <TargetName> <Message> and Tab reply) routed via targeted Rpc_ReceiveChatMessage with rich-text sanitization and 160-character clamping"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-chat-003
+    system: chat
+    gdd: design/gdd/in-game-chat-system.md
+    requirement: "Chat rate limiter must enforce a 5-message token bucket (1 token/1.5s refill) and maintain a 50-row circular UI pool with 8.0s passive auto-fade to alpha 0.15"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #13: PlayFab Cloud Identity & Leaderboard ---
+  - id: TR-playfab-001
+    system: playfab
+    gdd: design/gdd/playfab-cloud-leaderboard.md
+    requirement: "PlayFabAuthService must authenticate players via LoginWithCustomID or LoginWithEmailAddress, sync DisplayName (3..16 chars) to Photon Fusion [Networked] PlayerName, and fallback gracefully to Offline Guest Mode on network timeout"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-playfab-002
+    system: playfab
+    gdd: design/gdd/playfab-cloud-leaderboard.md
+    requirement: "PlayFabStatsService must submit match results (MatchesWon, TotalKills, MatchesPlayed) via UpdatePlayerStatistics at MatchOver with idempotent MatchSequenceId protection and exponential backoff retry (1s, 2s, 4s)"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-playfab-003
+    system: playfab
+    gdd: design/gdd/playfab-cloud-leaderboard.md
+    requirement: "LeaderboardModalView must fetch Top 20 and AroundPlayer rankings via GetLeaderboard with a 15.0s client cache TTL and highlight the local player row in #38BDF8"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  # --- System #14: 3D Spatial Audio & Combat VFX ---
+  - id: TR-audio-001
+    system: audio
+    gdd: design/gdd/spatial-audio-combat-vfx.md
+    requirement: "SoundManager must route audio through 4 AudioMixer groups (Master, BGM, SFX_3D, UI_2D) using 16 pooled 3D AudioSources (spatialBlend=1.0, minDistance=2.0m, maxDistance=28.0m) with +/-8% random pitch variation"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-audio-002
+    system: audio
+    gdd: design/gdd/spatial-audio-combat-vfx.md
+    requirement: "CombatVFXManager must render pooled URP particle and trail effects for Vertical Slash (#F59E0B), Horizontal Sweep (#38BDF8), Ranged Projectile/Impact (#FACC15), and Dash/Dodge trails with zero runtime shader compilation or GC allocation"
+    created: 2026-11-10
+    revised: ""
+    status: active
+
+  - id: TR-audio-003
+    system: audio
+    gdd: design/gdd/spatial-audio-combat-vfx.md
+    requirement: "HitStop and HitFlash feedback must apply a 0.08s MPB _EmissionColor flash, DOTween squash-and-stretch (1.28, 0.72, 1.28), and bounded camera trauma shake without mutating shared materials or collider transforms"
+    created: 2026-11-10
+    revised: ""
+    status: active

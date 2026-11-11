@@ -1,0 +1,4 @@
+Reviewed-Content-Hash: Assets/Scripts/UI/HUD/MobileActionButton.cs 76f70da6a4170f1b42ec2a3883428822bfb4984f
+Reviewed-Content-Hash: Assets/Scripts/UI/HUD/MobileActionPadView.cs 3a9a4c34fd8b33a25c11a3e518b41f17345d62ef
+Reviewed-Content-Hash: Assets/Scenes/Arena.unity d7a16a55b2c8156ebfb6088c0ea540b014692ce3
+Reviewed-Content-Hash: production/qa/evidence/story-002-seven-button-mobile-action-pad/01-mobile-action-pad-radial-7btn.png 2e5e012cfcb0f91ba1c5b145921c8116eca3373e

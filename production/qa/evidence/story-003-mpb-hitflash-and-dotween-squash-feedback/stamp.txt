@@ -1,0 +1,3 @@
+Reviewed-Content-Hash: Assets/Scripts/Presentation/VFX/CapsuleVisualFeedback.cs 7c0569c65540c76d2a675e9567624ec7153a9494
+Reviewed-Content-Hash: Assets/Prefabs/Player/PlayerCapsule.prefab 96d3ef5f8c98705dfa52b40db1d8101e89d862ee
+Reviewed-Content-Hash: production/qa/evidence/story-003-mpb-hitflash-and-dotween-squash-feedback/01-mpb-emissive-white-hitflash-and-squash.png 32dd5e574007ac344366961a1dc08d9a2bdf3ea7

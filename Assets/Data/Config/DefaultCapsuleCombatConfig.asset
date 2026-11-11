@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: abe46d278567c7949b999c3b485da0c8, type: 3}
+  m_Name: DefaultCapsuleCombatConfig
+  m_EditorClassIdentifier: Game::CapsuleArena.Core.Config.CharacterCombatConfigSO
+  _maxHealth: 100
+  _moveSpeed: 6
+  _sprintMultiplier: 1.35
+  _jumpHeight: 1.5
+  _gravity: -19.62
+  _rotationSensitivity: 1
+  _dashSpeed: 18
+  _dashDurationSec: 0.2
+  _dashCooldownSec: 3
+  _dodgeSpeed: 12
+  _dodgeDurationSec: 0.25
+  _dodgeCooldownSec: 1.5
+  _verticalSlashDamage: 25
+  _verticalSlashRange: 2.5
+  _verticalSlashAngleDeg: 50
+  _verticalSlashCooldownSec: 0.6
+  _horizontalSweepDamage: 30
+  _horizontalSweepRange: 3
+  _horizontalSweepAngleDeg: 90
+  _horizontalSweepTurnDeg: 90
+  _horizontalSweepTurnDurationSec: 0.18
+  _horizontalSweepCooldownSec: 1.2
+  _rangedDamage: 15
+  _rangedProjectileSpeed: 15
+  _rangedMaxDistance: 30
+  _rangedProjectileRadius: 0.2
+  _rangedFireCooldownSec: 0.4
+  _tpsCameraDistance: 4.5
+  _tpsCameraHeight: 1.6
+  _hitFlashDurationSec: 0.08
+  _squashStretchDurationSec: 0.18
+  _visualStretchScale: {x: 0.78, y: 1.28, z: 0.78}
+  _visualSquashScale: {x: 1.3, y: 0.7, z: 1.15}
+  _dodgeVisualTiltAngle: 35

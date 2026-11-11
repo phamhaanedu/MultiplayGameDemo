@@ -1,0 +1,6 @@
+Reviewed-Content-Hash: Assets/Scripts/UI/Chat/ChatViewController.cs a0315aa46504a156b1a2fb9ce335194239ceafb0
+Reviewed-Content-Hash: Assets/Scripts/UI/Chat/ChatNetworkRouter.cs 56ce49b4cfdd95190b5ca4a97e5e148216f6562f
+Reviewed-Content-Hash: Assets/Scripts/UI/Chat/ChatMessageRingBuffer.cs c0f9e7db821bed48678d819000de2d96c11d0a43
+Reviewed-Content-Hash: Assets/Scenes/Arena.unity d7a16a55b2c8156ebfb6088c0ea540b014692ce3
+Reviewed-Content-Hash: production/qa/evidence/story-001-canvasgroup-persistent-chat-window/01-chat-focused-public-and-whisper.png 860d28dcb25a939bf875fc70723de2c9dd915ed9
+Reviewed-Content-Hash: production/qa/evidence/story-001-canvasgroup-persistent-chat-window/02-chat-passive-minimized.png aa615ed2194f696caa0e3f3e271e59305a837316

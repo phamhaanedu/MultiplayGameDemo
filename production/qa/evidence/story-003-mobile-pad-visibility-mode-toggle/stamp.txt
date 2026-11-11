@@ -1,0 +1,5 @@
+Reviewed-Content-Hash: Assets/Scripts/UI/HUD/MobileActionPadView.cs 3a9a4c34fd8b33a25c11a3e518b41f17345d62ef
+Reviewed-Content-Hash: Assets/Scripts/UI/Settings/KeybindingRebindModal.cs 7c3b3312402d8c844cb1d19fdbafe8eca8062604
+Reviewed-Content-Hash: Assets/Scenes/Arena.unity d7a16a55b2c8156ebfb6088c0ea540b014692ce3
+Reviewed-Content-Hash: production/qa/evidence/story-003-mobile-pad-visibility-mode-toggle/01-mobile-pad-force-on-toggle.png 58ccfa5bdbf63388726d34d057df5cd2f5e07ff4
+Reviewed-Content-Hash: production/qa/evidence/story-003-mobile-pad-visibility-mode-toggle/02-mobile-pad-force-off-toggle.png e350e779a5c26120f71c1ab7b06157d29adc491f

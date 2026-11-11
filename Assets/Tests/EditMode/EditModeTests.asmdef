@@ -1,0 +1,35 @@
+{
+  "name": "EditModeTests",
+  "rootNamespace": "CapsuleArena.Tests.EditMode",
+  "references": [
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner",
+    "Game",
+    "Fusion.Unity",
+    "Photon.Realtime",
+    "Unity.InputSystem",
+    "Unity.InputSystem.TestFramework",
+    "Unity.TextMeshPro",
+    "UnityEngine.UI"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll",
+    "Fusion.Runtime.dll",
+    "Fusion.Common.dll",
+    "Fusion.Realtime.dll",
+    "Fusion.Sockets.dll",
+    "Fusion.Log.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

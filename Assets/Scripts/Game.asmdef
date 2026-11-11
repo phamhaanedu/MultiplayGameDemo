@@ -1,0 +1,21 @@
+{
+  "name": "Game",
+  "rootNamespace": "CapsuleArena",
+  "references": [
+    "Fusion.Unity",
+    "Photon.Realtime",
+    "Unity.InputSystem",
+    "Unity.TextMeshPro",
+    "UnityEngine.UI",
+    "Unity.RenderPipelines.Universal.Runtime"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

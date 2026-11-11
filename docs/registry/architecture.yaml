@@ -1,0 +1,251 @@
+# Architecture Decision Registry
+#
+# PURPOSE: Single source of truth for key architectural stances that all ADRs
+# must agree on.
+#
+# LAYOUT: the one shape .claude/scripts/registry.sh reads.
+
+version: 1
+last_updated: "2026-11-10"
+
+state_ownership:
+  - state: combat_stats_config
+    status: active
+    owner_system: character-combat-config
+    adr: docs/architecture/adr-0001-immutable-combat-config-and-level-physics.md
+    interface: "ICombatConfigProvider.Config (read-only CharacterCombatConfigSO)"
+    write_access: editor-only-immutable-at-runtime
+    referenced_by:
+      - docs/architecture/adr-0001-immutable-combat-config-and-level-physics.md
+      - docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+      - docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+      - docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+      - docs/architecture/adr-0008-playfab-cloud-leaderboard-and-spatial-vfx-pool.md
+    added: 2026-11-10
+    revised: ""
+
+  - state: keybindings_and_input_focus
+    status: active
+    owner_system: keybinding-input-system
+    adr: docs/architecture/adr-0002-keybinding-json-and-input-focus-architecture.md
+    interface: "IKeybindingService + IInputFocusService + NetworkInputData (16B)"
+    write_access: keybinding-input-system-only
+    referenced_by:
+      - docs/architecture/adr-0002-keybinding-json-and-input-focus-architecture.md
+      - docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+      - docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+      - docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+    added: 2026-11-10
+    revised: ""
+
+  - state: player_health_and_alive_state
+    status: active
+    owner_system: health-damage-rpc-system
+    adr: docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+    interface: "IDamageableTarget.CurrentHP & IsAlive ([Networked], Victim StateAuthority writes)"
+    write_access: victim-state-authority-only
+    referenced_by:
+      - docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+      - docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+      - docs/architecture/adr-0006-match-manager-masterclient-failover.md
+      - docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+    added: 2026-11-10
+    revised: ""
+
+  - state: player_locomotion_and_yaw
+    status: active
+    owner_system: character-movement-mobility
+    adr: docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+    interface: "IMobilityStateReadOnly.CurrentState & ICombatStateReadOnly.CurrentAuthoritativeYaw"
+    write_access: local-player-state-authority-only
+    referenced_by:
+      - docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+      - docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+      - docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+    added: 2026-11-10
+    revised: ""
+
+  - state: match_lifecycle_state
+    status: active
+    owner_system: match-manager-authority-failover
+    adr: docs/architecture/adr-0006-match-manager-masterclient-failover.md
+    interface: "IMatchStateService.CurrentMatchState, AliveCount, WinnerPlayerRef, MatchSequenceId"
+    write_access: shared-mode-masterclient-state-authority
+    referenced_by:
+      - docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+      - docs/architecture/adr-0006-match-manager-masterclient-failover.md
+      - docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+      - docs/architecture/adr-0008-playfab-cloud-leaderboard-and-spatial-vfx-pool.md
+    added: 2026-11-10
+    revised: ""
+
+interfaces:
+  - contract: damage_request_rpc
+    status: active
+    pattern: rpc
+    producer: combat-melee-ranged-system
+    consumers:
+      - health-damage-rpc-system
+    adr: docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+    signal_signature: "Rpc_RequestTakeDamage(int rawDamage, byte attackType, PlayerRef attacker, int attackTick)"
+    referenced_by:
+      - docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+      - docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+    added: 2026-11-10
+    revised: ""
+
+  - contract: kill_confirmed_notification
+    status: active
+    pattern: rpc
+    producer: health-damage-rpc-system
+    consumers:
+      - match-manager-authority-failover
+      - combat-hud-mobile-action-pad
+      - spatial-audio-combat-vfx
+    adr: docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+    signal_signature: "Rpc_NotifyKillConfirmed(PlayerRef killer, PlayerRef victim, byte attackType)"
+    referenced_by:
+      - docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+      - docs/architecture/adr-0006-match-manager-masterclient-failover.md
+      - docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+      - docs/architecture/adr-0008-playfab-cloud-leaderboard-and-spatial-vfx-pool.md
+    added: 2026-11-10
+    revised: ""
+
+  - contract: horizontal_sweep_90_snap_turn
+    status: active
+    pattern: direct_call
+    producer: combat-melee-ranged-system
+    consumers:
+      - character-movement-mobility
+      - camera-fps-tps-spectator
+    adr: docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+    signal_signature: "SyncSweepYaw(float currentAuthoritativeYaw, bool isTurning)"
+    referenced_by:
+      - docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+      - docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+    added: 2026-11-10
+    revised: ""
+
+  - contract: chat_message_delivery
+    status: active
+    pattern: rpc
+    producer: in-game-chat-system
+    consumers:
+      - in-game-chat-system
+    adr: docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+    signal_signature: "Rpc_ReceiveChatMessage(PlayerRef sender, byte channel, string sanitizedText)"
+    referenced_by:
+      - docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+    added: 2026-11-10
+    revised: ""
+
+performance_budgets:
+  - target_fps: 60
+    status: active
+    total_frame_budget_ms: 16.67
+    platform: PC_And_Mobile
+    adr: docs/architecture/adr-0001-immutable-combat-config-and-level-physics.md
+    referenced_by:
+      - docs/architecture/adr-0001-immutable-combat-config-and-level-physics.md
+    added: 2026-11-10
+    revised: ""
+
+  - system: network-session-and-pool
+    status: active
+    budget_ms: 0.50
+    adr: docs/architecture/adr-0003-photon-fusion-shared-mode-and-object-pooling.md
+    notes: "Includes Photon Fusion 60Hz tick dispatch and O(1) INetworkObjectProvider queue acquire/release"
+    referenced_by:
+      - docs/architecture/adr-0003-photon-fusion-shared-mode-and-object-pooling.md
+    added: 2026-11-10
+    revised: ""
+
+  - system: locomotion-and-health-rpc
+    status: active
+    budget_ms: 0.40
+    adr: docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+    notes: "Includes Physics.CapsuleCastNonAlloc wall sliding and victim RPC health evaluation"
+    referenced_by:
+      - docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+    added: 2026-11-10
+    revised: ""
+
+  - system: combat-and-camera
+    status: active
+    budget_ms: 0.45
+    adr: docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+    notes: "Includes Physics.OverlapSphereNonAlloc melee sector checks, projectile SphereCast, and TPS camera boom SphereCast"
+    referenced_by:
+      - docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+    added: 2026-11-10
+    revised: ""
+
+  - system: hud-chat-and-presentation
+    status: active
+    budget_ms: 0.65
+    adr: docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+    notes: "Includes Billboard LateUpdate orientation, 7-button radial cooldown fill, MPB hit-flash, and 16-source 3D audio pool"
+    referenced_by:
+      - docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+      - docs/architecture/adr-0008-playfab-cloud-leaderboard-and-spatial-vfx-pool.md
+    added: 2026-11-10
+    revised: ""
+
+api_decisions:
+  - purpose: melee_sector_hit_detection
+    status: active
+    api: "Physics.OverlapSphereNonAlloc + Vector3.Dot + Physics.Raycast(LineOfSightMask)"
+    not: "Physics.OverlapSphere or animated weapon MeshCollider triggers"
+    adr: docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+    reason: "Zero GC allocation on 60Hz network ticks and deterministic angular sector validation"
+    referenced_by:
+      - docs/architecture/adr-0001-immutable-combat-config-and-level-physics.md
+      - docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+    added: 2026-11-10
+    revised: ""
+
+  - purpose: network_projectile_spawning
+    status: active
+    api: "FusionObjectPoolProvider : INetworkObjectProvider (Pre-warmed Queue of 32)"
+    not: "UnityEngine.Object.Instantiate / Destroy or default NetworkObjectProviderDefault"
+    adr: docs/architecture/adr-0003-photon-fusion-shared-mode-and-object-pooling.md
+    reason: "Eliminates GC spikes and instantiation hitching during rapid ranged fire"
+    referenced_by:
+      - docs/architecture/adr-0003-photon-fusion-shared-mode-and-object-pooling.md
+      - docs/architecture/adr-0005-multidirectional-combat-and-lag-compensation.md
+    added: 2026-11-10
+    revised: ""
+
+  - purpose: hit_flash_shader_override
+    status: active
+    api: "Renderer.GetPropertyBlock / SetPropertyBlock (_EmissionColor)"
+    not: "Renderer.material property access"
+    adr: docs/architecture/adr-0008-playfab-cloud-leaderboard-and-spatial-vfx-pool.md
+    reason: "Prevents runtime material instance duplication and preserves URP SRP Batcher compatibility"
+    referenced_by:
+      - docs/architecture/adr-0008-playfab-cloud-leaderboard-and-spatial-vfx-pool.md
+    added: 2026-11-10
+    revised: ""
+
+forbidden_patterns:
+  - pattern: direct_remote_health_mutation
+    status: active
+    description: "Attacker clients must never write directly to a remote player's [Networked] CurrentHP or IsAlive property; they must send Rpc_RequestTakeDamage to the victim's StateAuthority."
+    why: "In Photon Fusion Shared Mode, only the StateAuthority owner can modify its [Networked] state without causing authority race conditions."
+    adr: docs/architecture/adr-0004-tick-accurate-mobility-and-damage-rpc.md
+    added: 2026-11-10
+
+  - pattern: chat_gameobject_setactive_false
+    status: active
+    description: "InGameChatController must never call gameObject.SetActive(false) to hide the chat window; use CanvasGroup alpha, interactable, and blocksRaycasts instead."
+    why: "Deactivating the GameObject disables its NetworkBehaviour and causes incoming Photon Fusion chat RPCs to be silently dropped."
+    adr: docs/architecture/adr-0007-reactive-hud-mobile-pad-and-canvasgroup-chat.md
+    added: 2026-11-10
+
+  - pattern: hotpath_allocating_queries_in_fixedupdatenetwork
+    status: active
+    description: "Never call GetComponent, GameObject.Find, Physics.OverlapSphere, LINQ, or string '+' concatenation inside FixedUpdateNetwork() or Update()."
+    why: "Causes managed heap allocations at 60Hz that trigger Garbage Collection frame stutters."
+    adr: docs/architecture/adr-0001-immutable-combat-config-and-level-physics.md
+    added: 2026-11-10

@@ -1,0 +1,4 @@
+Reviewed-Content-Hash: Assets/Scripts/Presentation/VFX/VfxManager.cs 54259714e85fd6798f9a0be3aa77d6e7ad3fc3ca
+Reviewed-Content-Hash: Assets/Scripts/Presentation/VFX/PooledVfxInstance.cs 6d3fa1ef7e5f3c20f9a75a92be62c12b5c0174cb
+Reviewed-Content-Hash: Assets/Scenes/Arena.unity d7a16a55b2c8156ebfb6088c0ea540b014692ce3
+Reviewed-Content-Hash: production/qa/evidence/story-002-pooled-urp-combat-vfx-manager/01-vertical-slash-cyan-and-horizontal-sweep-amber-arcs.png 3cd60ac781e3f52baa173b5c02660ffdde17fb52

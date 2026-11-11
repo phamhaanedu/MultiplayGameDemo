@@ -1,0 +1,55 @@
+# CCGS project configuration — single source of truth for project settings.
+# See .claude/docs/effects-map.md for full schema.
+
+schema_version: 1
+
+framework:
+  version: 1.2.0
+  last_upgraded: 2026-10-19
+
+project:
+  name: "Capsule Arena: Last Man Standing"
+  stage: Production
+
+engine:
+  name: "Unity"
+  version: "6.6 (6000.6.8f1)"
+  language: "C# 9.0"
+  rendering: "Universal Render Pipeline (URP)"
+  physics: "3D PhysX + Photon Fusion 2 Shared Mode (60Hz)"
+
+platform:
+  targets: ["PC", "Mobile"]
+  input_methods: ["Keyboard/Mouse", "Touch"]
+  primary_input: "Keyboard/Mouse"
+  gamepad_support: "Partial"
+  touch_support: "Full"
+  notes: "Dual PC Keyboard/Mouse + 7-Button Mobile Action Pad (Bottom-Right)"
+
+naming:
+  classes: "PascalCase"
+  variables: "_camelCase (private fields), camelCase (locals), PascalCase (public properties)"
+  signals_events: "OnPascalCase"
+  files: "PascalCase.cs"
+  scenes_prefabs: "PascalCase"
+  constants: "PascalCase"
+
+performance:
+  target_fps: 60
+  frame_budget_ms: 16.67
+  draw_calls: 150
+  memory_ceiling_mb: 512
+
+testing:
+  framework: "Unity Test Framework (NUnit EditMode & PlayMode)"
+  minimum_coverage: 80
+
+specialists:
+  primary: "unity-specialist"
+  code: "csharp-specialist"
+  shader: "unity-shader-specialist"
+  ui: "unity-ui-specialist"
+
+modes:
+  rigor: full
+  automation: autonomous

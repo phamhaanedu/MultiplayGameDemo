@@ -1,0 +1,5 @@
+Reviewed-Content-Hash: Assets/Scripts/UI/Settings/KeybindingRowView.cs 793bad6c62d5b7cea003eefe56bfb3d29be6ee5a
+Reviewed-Content-Hash: Assets/Scripts/UI/Settings/KeybindingRebindModal.cs 7c3b3312402d8c844cb1d19fdbafe8eca8062604
+Reviewed-Content-Hash: Assets/Scenes/Arena.unity d7a16a55b2c8156ebfb6088c0ea540b014692ce3
+Reviewed-Content-Hash: production/qa/evidence/story-002-interactive-keybinding-rebind-modal/01-keybinding-modal-swap-highlight.png 38908ef7515b0797800b5c82230f5ba939087d2d
+Reviewed-Content-Hash: production/qa/evidence/story-002-interactive-keybinding-rebind-modal/02-keybinding-modal-listening-overlay.png 090e3b5949a171eac5d22d9096f668c21e414281
