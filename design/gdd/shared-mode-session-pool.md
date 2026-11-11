@@ -50,14 +50,18 @@ Nhờ kiến trúc phân quyền `StateAuthority` trực tiếp cho từng máy 
 
 1. **Quy tắc Cấu Hình Phiên Mạng Photon Fusion 2 Shared Mode (`Session Configuration Contract`):**
    - Toàn bộ kết nối nhiều người chơi bắt buộc sử dụng chế độ **`GameMode.Shared`** của Photon Fusion 2 với định danh ứng dụng cố định **`PhotonAppId = "fbee3c4f-1f3b-42da-80b9-0e4d2b47f3a9"`**.
-   - Tần số mô phỏng mạng được khóa ở **`TickRate = 60` (`60Hz`)** ($\Delta t = 1/60\text{s} \approx 0.01667\text{s}$), khớp tuyệt đối với công thức quy đổi Tick của `CharacterCombatConfigSO` (`System #1`).
-   - Quy mô phòng tối đa được khóa ở **`MaxPlayersPerRoom = 8`** (hỗ trợ tối ưu từ `2–8` người chơi giao tranh sinh tồn trong không gian đấu trường `40m x 40m` của `System #2`).
-   - Danh sách máy chủ khu vực (`AllowedRegions`) được giới hạn cố định trong 4 mã vùng chuẩn: **`asia`** (Châu Á - Singapore, mặc định), **`jp`** (Nhật Bản - Tokyo), **`us`** (Bắc Mỹ - Đông), và **`eu`** (Châu Âu - Amsterdam) nhằm tránh phân mảnh người chơi và đảm bảo RTT thấp nhất.
+   - Tần số mô phỏng mạng được khóa ở **`TickRate = 60` (`60Hz`)** ($\Delta t = 1/60\text{s} \approx 0.01667\text{s}$), khớp tuyệt đối với công thức quy đổi Tick của `CharacterCombatConfigSO` (`System #1`) và `MatchRulesConfigSO` (`System #10`).
+   - Quy mô phòng tối đa được cấu hình chuẩn ở **`MaxPlayersPerMatch = 4`** (`2–4` đấu sĩ giao tranh sinh tồn, tự động đếm ngược `5.0s` ngay khi có người thứ 2 gia nhập, và cho phép người thứ 3, 4 gia nhập chiến đấu trong `60.0s` đầu của trận đấu theo `MatchRulesConfigSO`).
+   - Hai chế độ ghép phòng trong `FusionSessionManager`:
+     - **`Quick Join` (`SessionName = ""`):** Đặt `IsOpen = true`, `IsVisible = true`, `PlayerCount = 4` để Photon Cloud tự động ghép người chơi vào phòng công khai đang mở và còn chỗ trống (`< 4` người), hoặc tự tạo phòng công khai mới nếu chưa có phòng nào mở.
+     - **`Create / Join Room` (`SessionName = normalizedRoomCode`):** Chuẩn hóa mã phòng in hoa (`Trim().ToUpperInvariant()`) để những người chơi nhập cùng mã phòng kết nối vào chính xác phòng đó.
 
-2. **Quy tắc Khởi Tạo `NetworkRunner` & Đăng Ký `LagCompensation` (`Runner Bootstrap & Hitbox Registration`):**
-   - Khi người chơi nhấn bắt đầu từ Lobby, `NetworkSessionManager` khởi tạo một thực thể `NetworkRunner` sạch, bật `runner.ProvideInput = true`, gắn đồng thời thành phần **`LagCompensation`** (để theo dõi lịch sử vị trí các `HitboxRoot` trên mỗi nhân vật Capsule phục vụ `System #7`) và **`NetworkSceneManagerDefault`**.
-   - Phiên chơi được khởi chạy bất đồng bộ thông qua lệnh chuẩn:
-     `Runner.StartGame(new StartGameArgs { GameMode = GameMode.Shared, SessionName = roomName, PlayerCount = 8, ObjectProvider = _networkObjectPool, SceneManager = _networkSceneManager, CustomPhotonAppSettings = appSettings })`.
+2. **Quy tắc Khởi Tạo `NetworkRunner`, Chuẩn Hóa `IsSpawnedOnRunner` & Đồng Bộ Đối Xứng Cho Client Join (`Joining-Client Symmetry Contract`):**
+   - Khi người chơi nhấn bắt đầu từ Lobby, `FusionSessionManager` khởi tạo một thực thể `NetworkRunner` sạch, bật `runner.ProvideInput = true`, gắn `FusionObjectPoolProvider` (`INetworkObjectProvider`) và `NetworkSceneManagerDefault`.
+   - **Bảo vệ vòng đời Scene `NetworkObject` trên Client join (`IsSharedModeMasterClient == false`):** Khi Client join vào phòng của Host, `NetworkRunner.Attach` gán `Object` & `Runner` trước nhưng tạm thời đặt `MatchSystems.gameObject.SetActive(false)` và chưa cấp phát `Ptr` (`Object.IsValid == false`) cho tới khi nhận gói snapshot đầu tiên từ MasterClient. Do đó:
+     1. Mọi `NetworkBehaviour` trong dự án (`MatchManager`, `PlayerHealth`, `PlayerCombatController`, `PlayerMobilityController`, `ChatNetworkRouter`) bắt buộc định nghĩa `IsSpawnedOnRunner => _isNetworkSpawned && Object != null && Runner != null && Object.IsValid` (tuyệt đối không đọc `[Networked]` hay gọi `[Rpc]` trước khi `Spawned()`).
+     2. Trong `ArenaSceneBootstrapper.HandleLocalPlayerSpawned(localPlayer)`, hệ thống **ưu tiên thực thi `BindLocalPlayerAvatar` ĐẦU TIÊN** (gắn `CameraController` + `StepCameraFrame(0f)`, phím `V`, `PlayerMobilityController`, `PlayerCombatController`, `SpectatorController`, `CombatHud`, `FloatingDamageTextManager`) trước các tác vụ phụ trợ UI/Lobby/PlayFab có bọc `try/catch`, đảm bảo máy Client join luôn có góc nhìn Camera và điều khiển chuẩn xác 100% giống máy Host.
+     3. Khi người chơi rời phòng (`Shutdown`), `FusionSessionManager` tự động kích hoạt lại `_matchManager.gameObject.SetActive(true)` và xóa khóa góc xoay chuột ngang để lần join phòng tiếp theo luôn sạch sẽ.
 
 3. **Quy tắc Phân Quyền `StateAuthority` & Khởi Tạo Nhân Vật Trong `OnPlayerJoined` (`Local Authority Spawn Rule`):**
    - Trong kiến trúc `GameMode.Shared`, callback `OnPlayerJoined(NetworkRunner runner, PlayerRef player)` được kích hoạt trên tất cả các máy Client đang có mặt trong phòng mỗi khi có một người chơi mới tham gia.

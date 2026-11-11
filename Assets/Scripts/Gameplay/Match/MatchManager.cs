@@ -93,6 +93,9 @@ namespace CapsuleArena.Gameplay.Match
         private string _cachedMatchId = "LOCAL_M1";
         private bool _hasDispatchedEndedForCurrentMatch;
         private bool _pendingKillEvaluation;
+        private bool _isNetworkSpawned;
+        private PlayerRef _pendingDisplayNamePlayer = PlayerRef.None;
+        private string _pendingDisplayName;
 
         /// <summary>Raised whenever <see cref="CurrentMatchState"/> transitions.</summary>
         public event Action<MatchState> OnMatchStateChanged;
@@ -163,7 +166,12 @@ namespace CapsuleArena.Gameplay.Match
                 if (IsSpawnedOnRunner)
                 {
                     float totalPlayingSec = ActivePlayingDurationSeconds;
-                    if (!PhaseTimer.IsRunning || PhaseTimer.Expired(Runner))
+                    if (!PhaseTimer.IsRunning)
+                    {
+                        return 0f;
+                    }
+
+                    if (PhaseTimer.Expired(Runner))
                     {
                         return totalPlayingSec;
                     }
@@ -193,7 +201,13 @@ namespace CapsuleArena.Gameplay.Match
             }
         }
 
-        private bool IsSpawnedOnRunner => Object != null && Runner != null;
+        /// <summary>Gets a value indicating whether this <see cref="MatchManager"/> has completed Fusion <c>Spawned()</c> attach.</summary>
+        public bool IsReadyOnNetwork => IsSpawnedOnRunner;
+
+        /// <summary>Gets any queued display name awaiting <c>Spawned()</c> flush on a joining client.</summary>
+        public string PendingDisplayName => _pendingDisplayName;
+
+        private bool IsSpawnedOnRunner => _isNetworkSpawned && Object != null && Runner != null && Object.IsValid;
 
         private void Awake()
         {
@@ -285,6 +299,9 @@ namespace CapsuleArena.Gameplay.Match
             _cachedMatchIdSequence = -1;
             _hasDispatchedEndedForCurrentMatch = false;
             _pendingKillEvaluation = false;
+            _isNetworkSpawned = false;
+            _pendingDisplayNamePlayer = PlayerRef.None;
+            _pendingDisplayName = null;
             _focusService?.SetFocusFlag(InputFocusFlag.MatchEnded, false);
             EmitRosterCounts();
             OnMatchStateChanged?.Invoke(MatchState.WaitingForPlayers);
@@ -339,6 +356,9 @@ namespace CapsuleArena.Gameplay.Match
 
             if (IsSpawnedOnRunner)
             {
+                _pendingDisplayNamePlayer = PlayerRef.None;
+                _pendingDisplayName = null;
+
                 if (Object.HasStateAuthority)
                 {
                     ApplyAuthoritativeDisplayName(player, trimmed);
@@ -350,6 +370,11 @@ namespace CapsuleArena.Gameplay.Match
 
                 return;
             }
+
+            // Scene NetworkObjects on joining Shared Mode clients have Object & Runner assigned before Spawned().
+            // Queue the display name so Spawned() flushes Rpc_RegisterDisplayName once Object.IsValid is true.
+            _pendingDisplayNamePlayer = player;
+            _pendingDisplayName = trimmed;
 
             if (_localRoster.TryGetValue(player, out PlayerMatchStats existing))
             {
@@ -376,6 +401,7 @@ namespace CapsuleArena.Gameplay.Match
         /// <inheritdoc />
         public override void Spawned()
         {
+            _isNetworkSpawned = true;
             _changeDetector = GetChangeDetector(ChangeDetector.Source.SimulationState);
             _localPlayerRef = Runner.LocalPlayer;
             if (Runner.SessionInfo.IsValid && !string.IsNullOrEmpty(Runner.SessionInfo.Name))
@@ -396,9 +422,37 @@ namespace CapsuleArena.Gameplay.Match
                 SyncActiveRunnerPlayersIntoRoster();
             }
 
-            _lastPresentationState = CurrentMatchState;
-            EmitRosterCounts();
-            OnMatchStateChanged?.Invoke(CurrentMatchState);
+            FlushPendingDisplayNameIfSpawned();
+            ApplyPresentationStateChange(CurrentMatchState);
+        }
+
+        /// <inheritdoc />
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            _isNetworkSpawned = false;
+        }
+
+        /// <summary>
+        /// Flushes any display name queued prior to <see cref="Spawned"/> (e.g., when a joining client's avatar
+        /// spawns before the scene <see cref="MatchManager"/> snapshot arrives from the MasterClient).
+        /// </summary>
+        public void FlushPendingDisplayNameIfSpawned()
+        {
+            if (_pendingDisplayNamePlayer == PlayerRef.None || string.IsNullOrEmpty(_pendingDisplayName))
+            {
+                return;
+            }
+
+            if (!IsSpawnedOnRunner)
+            {
+                return;
+            }
+
+            PlayerRef player = _pendingDisplayNamePlayer;
+            string nameToSubmit = _pendingDisplayName;
+            _pendingDisplayNamePlayer = PlayerRef.None;
+            _pendingDisplayName = null;
+            SubmitPlayerDisplayName(player, nameToSubmit);
         }
 
         /// <inheritdoc />

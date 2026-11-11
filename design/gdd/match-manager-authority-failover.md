@@ -53,16 +53,20 @@ Không giống như các chế độ Deathmatch hồi sinh vô tận dễ gây n
      - **`Allow State Authority Override = true`**: Cho phép một máy khách khác gọi `Object.RequestStateAuthority()` để giành lấy quyền điều khiển khi chủ phòng cũ rời đi.
      - **`Destroy When State Authority Leaves = false`**: Ngăn chặn Photon Fusion 2 tự động hủy (`Despawn`) đối tượng `MatchManager` khi máy khách đang giữ `StateAuthority` ngắt kết nối khỏi phiên `GameMode.Shared`.
 
-2. **Quy tắc Trạng Thái Mạng Đồng Bộ (`[Networked]` State Schema):**
-   - Toàn bộ trạng thái điều phối trận đấu được khai báo bằng thuộc tính `[Networked]` trên lớp `MatchManager : NetworkBehaviour` để tự động nhân bản (replicate) từ máy giữ `StateAuthority` tới mọi máy `Proxy` trong phòng:
-     - `[Networked, OnChangedRender(nameof(OnMatchPhaseChanged))] public MatchPhase CurrentPhase { get; set; }` — Pha hiện tại của trận đấu (`WaitingForPlayers = 0`, `PreMatchCountdown = 1`, `ActiveCombat = 2`, `MatchEnded = 3`).
-     - `[Networked] public TickTimer PhaseTimer { get; set; }` — Đồng hồ đếm ngược đa năng theo Tick mạng dùng cho cả 3 pha có thời hạn:
-       - `PreMatchCountdownSeconds = 5.0f` (`300 ticks` ở `60Hz`)
-       - `MatchDurationSeconds = 240.0f` (`4 phút` = `14,400 ticks` ở `60Hz`)
-       - `PostMatchCelebrationSeconds = 12.0f` (`720 ticks` ở `60Hz`)
+2. **Quy tắc Trạng Thái Mạng Đồng Bộ (`[Networked]` State Schema & `MatchRulesConfigSO`):**
+   - Toàn bộ tham số luật trận đấu được cấu hình tập trung trong `MatchRulesConfigSO` (`Assets/Data/Config/DefaultMatchRulesConfig.asset`) để nhà phát triển chủ động tinh chỉnh trên Inspector mà không cần sửa code:
+     - `MinPlayersToStart = 2` (chỉ cần đủ 2 người chơi — 1 Host và 1 Client join — là tự động đếm ngược bắt đầu trận đấu, không bắt buộc chờ đủ 4 người).
+     - `MaxPlayersPerMatch = 4` (tối đa 4 người chơi mỗi phòng Shared Mode).
+     - `CountdownDurationSeconds = 5.0f` (`300 ticks` ở `60Hz`).
+     - `PlayingDurationSeconds = 180.0f` (`3 phút` = `10,800 ticks` ở `60Hz`).
+     - `LateJoinActiveWindowSeconds = 60.0f` (`3,600 ticks` ở `60Hz` — cửa sổ 60 giây đầu cho phép người chơi thứ 3, 4 vào phòng vẫn tham gia chiến đấu trực tiếp).
+     - `EndedDurationSeconds = 8.0f` (`480 ticks` ở `60Hz`).
+   - Toàn bộ trạng thái điều phối trận đấu được khai báo bằng thuộc tính `[Networked]` trên lớp `MatchManager : NetworkBehaviour` (kèm chốt kiểm tra an toàn `IsSpawnedOnRunner => _isNetworkSpawned && Object != null && Runner != null && Object.IsValid` để các máy Client join không bao giờ đọc `[Networked]` hay gửi `[Rpc]` trước khi `MatchManager.Spawned()` nhận xong snapshot đầu tiên):
+     - `[Networked, OnChangedRender(nameof(OnMatchPhaseChanged))] public MatchState CurrentPhase { get; set; }` — Pha hiện tại của trận đấu (`WaitingForPlayers = 0`, `Countdown = 1`, `Playing = 2`, `Ended = 3`).
+     - `[Networked] public TickTimer PhaseTimer { get; set; }` — Đồng hồ đếm ngược đa năng theo Tick mạng đọc thời lượng từ `MatchRulesConfigSO` (`5.0s` / `180.0s` / `8.0s`). Nếu trên máy Client vừa join mà `PhaseTimer` chưa kịp đồng bộ (`!PhaseTimer.IsRunning`), `ElapsedPlayingSeconds` trả về `0.0f` an toàn.
      - `[Networked] public int AlivePlayerCount { get; set; }` — Số lượng người chơi đang có trạng thái `IsAlive == true` trong trận hiện tại.
      - `[Networked] public PlayerRef WinnerPlayer { get; set; }` — Định danh `PlayerRef` của người chiến thắng chung cuộc (`PlayerRef.None` khi chưa xác định).
-     - `[Networked, Capacity(8)] public NetworkDictionary<PlayerRef, PlayerMatchRecord> PlayerRecords => default;` — Từ điển lưu trữ hồ sơ thi đấu của tối đa `8` đấu sĩ trong phòng.
+     - `[Networked, Capacity(4)] public NetworkDictionary<PlayerRef, PlayerMatchStats> MatchRoster => default;` — Từ điển lưu trữ hồ sơ thi đấu của tối đa `4` đấu sĩ trong phòng (kèm hàng đợi `PendingDisplayName` trên Client join để tự động gửi `Rpc_RegisterDisplayName` ngay khi `Spawned()`).
    - Cấu trúc dữ liệu hồ sơ người chơi `PlayerMatchRecord : INetworkStruct` (cấp phát `0 Byte GC`, tuần tự hóa trực tiếp vào Snapshot mạng) bao gồm:
 
 | Trường Dữ Liệu (`PlayerMatchRecord`) | Kiểu Dữ Liệu | Kích Thước Bit/Byte | Ý Nghĩa Ngữ Nghĩa & Quy Tắc Cập Nhật |
@@ -81,14 +85,15 @@ Không giống như các chế độ Deathmatch hồi sinh vô tận dễ gây n
      - **Tính liên tục tuyệt đối (Zero-Tick Interruption):** Bởi vì `CurrentPhase`, `PhaseTimer`, `AlivePlayerCount`, `WinnerPlayer` và `PlayerRecords` đều là các biến `[Networked]` đã được đồng bộ sẵn trên bộ nhớ Snapshot của mọi máy khách ở từng Tick, ngay khi máy `SharedModeMasterClient` mới nhận được `Object.HasStateAuthority == true`, nó tiếp tục chạy logic kiểm tra `PhaseTimer.Expired(Runner)` và đếm `AlivePlayerCount` từ đúng Tick hiện tại mà không cần khởi tạo lại bộ đếm hay làm gián đoạn trận đấu dù chỉ 1 Tick!
      - **Đồng bộ kiểm toán hậu chuyển giao (`Post-Failover State Audit`):** Trong Tick đầu tiên nhận được `HasStateAuthority` (hoặc bên trong callback `StateAuthorityChanged()`), máy chủ phòng mới thực hiện một lượt quét nhanh (`ReconcileAlivePlayersWithActiveRunners()`) đối chiếu danh sách `Runner.ActivePlayers` với `PlayerRecords` để đảm bảo nếu chủ phòng cũ vừa thoát khi đang còn sống (`IsAlive == true`), hồ sơ của chủ phòng cũ được đánh dấu `IsAlive = false`, cập nhật lại `AlivePlayerCount` và kiểm tra ngay điều kiện thắng thua nếu phòng chỉ còn đúng 1 người sống sót.
 
-4. **Quy tắc Gia Nhập Phòng & Phân Luồng Đấu Sĩ / Khán Giả (`Join-Phase Routing Rules`):**
-   - **Nếu người chơi vào phòng khi `CurrentPhase == WaitingForPlayers` hoặc `PreMatchCountdown`:**
-     - Người chơi được đăng ký vào `PlayerRecords` với `IsAlive = true`, `CurrentHealthSnapshot = 100`, `Kills = 0`, `FinalPlacement = 0`.
-     - Hệ thống `#4` (`Shared Mode Session`) sinh nhân vật đấu sĩ tại một `SpawnPoint` trống và tăng `AlivePlayerCount`.
-     - Nếu đang ở `WaitingForPlayers` và tổng số người chơi hợp lệ đạt `AlivePlayerCount >= MinPlayersToStart` (`2` người), `MatchManager` lập tức chuyển `CurrentPhase = MatchPhase.PreMatchCountdown` và khởi tạo `PhaseTimer = TickTimer.CreateFromSeconds(Runner, PreMatchCountdownSeconds)` (`5.0s`).
-   - **Nếu người chơi mới gia nhập phòng khi trận đấu đang diễn ra (`CurrentPhase == ActiveCombat` hoặc `MatchEnded` — Late Joiner):**
-     - Để bảo vệ tính công bằng của thể thức Last Man Standing (**Pillar 3**), người vào muộn **không** được sinh nhân vật chiến đấu giữa chừng.
-     - `MatchManager` đăng ký người chơi vào `PlayerRecords` với `IsAlive = false`, `CurrentHealthSnapshot = 0`, `FinalPlacement = AlivePlayerCount + 1` (hoặc trạng thái Spectator), không cộng vào `AlivePlayerCount`, và phát tín hiệu để **Hệ thống #9 (`Ghost Mode Spectator System`)** cùng **Hệ thống #3 (`InputFocusManager`)** đưa người chơi đó vào thẳng chế độ `GhostSpectating` theo dõi trận đấu cho tới khi ván mới bắt đầu.
+4. **Quy tắc Gia Nhập Phòng, Tự Động Đếm Ngược `5.0s` & Cửa Sổ Vào Trận Muộn `60.0s` (`Join-Phase & 60s Active Late-Join Window`):**
+   - **Khi người chơi vào phòng lúc `CurrentPhase == WaitingForPlayers` hoặc `Countdown`:**
+     - Người chơi được đăng ký vào `MatchRoster` với `IsAlive = true`, `CurrentHealthSnapshot = 100`, `Kills = 0`.
+     - Hệ thống `#4` (`FusionSessionManager`) sinh nhân vật đấu sĩ tại một `SpawnPoint` trống và tăng `AlivePlayerCount`.
+     - Ngay khi có **người chơi thứ 2** kết nối (`AlivePlayerCount >= MinPlayersToStart == 2`), `MatchManager` tự động chuyển từ `WaitingForPlayers` sang `Countdown` với thời gian **`CountdownDurationSeconds = 5.0s` (`300 ticks`)** đọc từ `MatchRulesConfigSO`. Người chơi thứ 3 và thứ 4 vào trong lúc đang đếm ngược `5.0s` sẽ tham gia ngay vào đội hình xuất phát.
+   - **Khi trận đấu đã bắt đầu (`CurrentPhase == Playing`) và người chơi thứ 3, 4 gia nhập phòng (`60s Late-Join Grace Window`):**
+     - `MatchManager.CanJoinCurrentMatchAlive()` kiểm tra thời gian đã trôi qua của hiệp đấu: `ElapsedPlayingSeconds <= RulesConfig.LateJoinActiveWindowSeconds` (mặc định **`60.0s`**, cấu hình trong `MatchRulesConfigSO`).
+     - **Trong `60.0s` đầu tiên của trận đấu (`ElapsedPlayingSeconds <= 60.0s`):** Người chơi thứ 3 và thứ 4 vào phòng **vẫn được tham gia trực tiếp vào trận đấu** với tư cách đấu sĩ sống (`IsAlive = true`, `100/100 HP`, cộng vào `AlivePlayerCount`), đảm bảo bạn bè vào trễ vài chục giây vẫn chơi chung ngay ván đó.
+     - **Sau mốc `60.0s` (`ElapsedPlayingSeconds > 60.0s`) hoặc khi trận đấu đang ở `Ended`:** Người vào muộn được `MatchManager` ghi nhận vào `MatchRoster` với **`IsAlive = false`**, không cộng vào `AlivePlayerCount`. Trên máy Client join, `ArenaSceneBootstrapper.EnforceLateJoinSpectatorStateIfRequired()` đợi bản ghi chính thức từ `MatchRoster` của MasterClient đồng bộ về, xác nhận `stats.IsAlive == false` rồi mới chuyển sang chế độ **Ghost Spectator (`System #9`)** (ngăn chặn triệt để lỗi tự chuyển nhầm sang Ghost Spectator do độ trễ gói tin đầu tiên).
 
 5. **Quy tắc Xét Thắng Thua & Phân Xử Hòa (`Last Man Standing & Tie-Breaker Rules`):**
    - Trong suốt thời gian `CurrentPhase == MatchPhase.ActiveCombat` (khi trận đấu đã bắt đầu với ít nhất `MinPlayersToStart = 2` người chơi), máy giữ `StateAuthority` của `MatchManager` lắng nghe sự kiện tử trận từ **Hệ thống #6 (`Health, Damage RPC & Death State System`)**, sự kiện `OnPlayerLeft` từ `NetworkRunner`, và kiểm tra `PhaseTimer.Expired(Runner)` trong mỗi `FixedUpdateNetwork()`:
@@ -270,13 +275,14 @@ The `remaining_match_seconds` formula is defined as:
 
 Các thông số điều chỉnh nhịp độ vòng lặp trận đấu được đóng gói trên Inspector của `MatchManager` (hoặc `MatchConfigSO` đi kèm) với các giới hạn an toàn:
 
-| Knob Name | Default Value | Safe Range (Min–Max) | Effect if Too Low | Effect if Too High | Interacts With |
+| Knob Name (`MatchRulesConfigSO`) | Default Value | Safe Range (Min–Max) | Effect if Too Low | Effect if Too High | Interacts With |
 | :--- | :---: | :---: | :--- | :--- | :--- |
-| `MinPlayersToStart` | `2 players` | `2 – 8 players` | Nếu đặt bằng `1`, trận đấu vừa bắt đầu đã kết thúc ngay lập tức vì `AlivePlayerCount == 1`. | Người chơi phải chờ đợi quá lâu trong phòng `WaitingForPlayers` mới đủ người mở trận (đặc biệt khi test 2 máy). | `WaitingForPlayers` $\rightarrow$ `PreMatchCountdown` transition. |
-| `MaxPlayersPerRoom` | `8 players` | `2 – 8 players` | Phòng quá ít người làm giảm tính hỗn chiến kịch tính của thể thức Last Man Standing. | Vượt quá sức chứa `[Capacity(8)]` của `NetworkDictionary` và làm chật sàn đấu `40m x 40m` (`System #2`). | `NetworkDictionary<PlayerRef, PlayerMatchRecord>`, số lượng `SpawnPoint` (`#2`). |
-| `PreMatchCountdownSeconds` | `5.0 s` (`300 ticks`) | `3.0 – 10.0 s` | Người chơi vừa tải xong Scene chưa kịp định hướng vị trí `SpawnPoint` đã bị đối phương lao vào tấn công. | Khoảng chờ đầu trận quá lê thê gây sốt ruột trước khi được điều khiển nhân vật. | `PhaseTimer`, HUD Countdown Banner (`#8`), Audio Stinger (`#14`). |
-| `MatchDurationSeconds` | `240.0 s` (`4 phút` / `14,400 ticks`) | `120.0 – 300.0 s` (`2 – 5 phút`) | Trận đấu quá ngắn khiến các cuộc đấu trí quanh vật cản (`Obstacle`) thường xuyên bị cắt ngang bởi hết giờ. | Trận đấu kéo dài quá 5 phút khiến những người chơi bị loại sớm ở chế độ `GhostSpectating` (`#9`) phải chờ ván mới quá lâu. | `PhaseTimer`, `tiebreaker_score`, Ghost Mode Spectator (`#9`). |
-| `PostMatchCelebrationSeconds` | `12.0 s` (`720 ticks`) | `5.0 – 20.0 s` | Màn hình vinh danh `WinnerPlayer` tắt quá nhanh, người chơi chưa kịp xem bảng xếp hạng hoặc gõ Chat chúc mừng (`#12`). | Thời gian nghỉ giữa hai ván quá dài làm nguội nhịp độ chơi liên tục (Rematch Loop). | `PhaseTimer`, Victory UI (`#8`), PlayFab Stat Commit (`#13`), Chat (`#12`). |
+| `MinPlayersToStart` | `2 players` | `2 – 4 players` | Nếu đặt bằng `1`, trận đấu vừa bắt đầu đã kết thúc ngay lập tức vì `AlivePlayerCount == 1`. | Người chơi phải chờ đủ 3–4 người mới mở trận, khó test nhanh 2 máy (1 Host + 1 Join). | `WaitingForPlayers` $\rightarrow$ `Countdown` transition. |
+| `MaxPlayersPerMatch` | `4 players` | `2 – 4 players` | Phòng chỉ có 2 người làm giảm tính hỗn chiến kịch tính của thể thức Last Man Standing. | Vượt quá sức chứa chuẩn `4` người của phòng đấu trường gọn nhẹ. | `StartGameArgs.PlayerCount`, `MatchRoster`, số lượng `SpawnPoint` (`#2`). |
+| `CountdownDurationSeconds` | `5.0 s` (`300 ticks`) | `0.5 – 60.0 s` | Người chơi thứ 2 vừa tải xong chưa kịp định hướng vị trí `SpawnPoint` hoặc người thứ 3 chưa kịp nối vào. | Khoảng chờ đầu trận quá lâu gây sốt ruột trước khi được giao tranh. | `PhaseTimer`, Waiting Room & HUD Countdown (`#8`, `#11`). |
+| `PlayingDurationSeconds` | `180.0 s` (`3 phút` / `10,800 ticks`) | `5.0 – 3600.0 s` | Trận đấu quá ngắn khiến các cuộc đấu trí quanh vật cản thường xuyên bị cắt ngang bởi hết giờ. | Trận đấu kéo dài quá lâu khiến người bị loại sớm phải chờ ván mới lâu. | `PhaseTimer`, `tiebreaker_score`, `LateJoinActiveWindowSeconds`. |
+| `LateJoinActiveWindowSeconds` | `60.0 s` (`3,600 ticks`) | `0.0 – 180.0 s` | Đặt `0.0s` khiến bạn bè vào trễ vài giây ngay đầu trận đã bị đẩy làm Ghost Spectator. | Đặt gần bằng `180.0s` khiến người mới vào ở cuối trận với `100 HP` có lợi thế bất công trước người còn ít máu. | `CanJoinCurrentMatchAlive()`, `GhostSpectatorController` (`#9`). |
+| `EndedDurationSeconds` | `8.0 s` (`480 ticks`) | `0.5 – 60.0 s` | Màn hình vinh danh `WinnerPlayer` tắt quá nhanh, người chơi chưa kịp xem kết quả. | Thời gian nghỉ giữa hai ván quá dài làm nguội nhịp độ chơi liên tục (Rematch Loop). | `PhaseTimer`, Victory UI (`#8`), PlayFab Stat Commit (`#13`). |
 
 ## Visual/Audio Requirements
 
@@ -351,10 +357,10 @@ Các thông số điều chỉnh nhịp độ vòng lặp trận đấu được
    - **WHEN** `MatchManager` tính điểm phân xử theo công thức `tiebreaker_score = (current_health * 1000) + (kills * 100) - player_join_order`
    - **THEN** đấu sĩ còn sống có `tiebreaker_score` cao nhất (ưu tiên `CurrentHealthSnapshot` cao nhất $\rightarrow$ `Kills` cao nhất $\rightarrow$ `PlayerRef.RawEncoded` nhỏ nhất) được tuyên bố là `WinnerPlayer` (`FinalPlacement = 1`) và trận đấu chuyển sang `MatchPhase.MatchEnded` với lý do `MatchEndReason.TimeExpiredTieBreaker`.
 
-8. **AC-08 (Phân luồng người chơi vào phòng muộn `Late Joiner` sang thẳng chế độ `GhostSpectating`):**
-   - **GIVEN** trận đấu đang diễn ra ở pha `MatchPhase.ActiveCombat`
-   - **WHEN** một người chơi mới (`Player C`) gia nhập vào phòng đấu
-   - **THEN** `MatchManager` ghi nhận `Player C` vào `PlayerRecords` với `IsAlive = false`, không làm tăng `AlivePlayerCount`, không sinh nhân vật chiến đấu trên sàn đấu, và chuyển thẳng `Player C` sang chế độ **Ghost Mode Spectator (`System #9`)** cho đến khi ván đấu hiện tại kết thúc.
+8. **AC-08 (Cửa sổ `60.0s` đầu cho người vào trận muộn chiến đấu & chuyển sang `GhostSpectating` sau `60.0s` đọc từ `MatchRulesConfigSO`):**
+   - **GIVEN** trận đấu đang diễn ra ở pha `Playing` với cấu hình `LateJoinActiveWindowSeconds = 60.0s` trong `MatchRulesConfigSO`
+   - **WHEN** người chơi thứ 3 hoặc thứ 4 (`Player C`) gia nhập phòng khi `ElapsedPlayingSeconds <= 60.0s` thì `MatchManager` đăng ký `Player C` với **`IsAlive = true`** để tham gia chiến đấu trực tiếp; ngược lại nếu `Player C` gia nhập khi **`ElapsedPlayingSeconds > 60.0s`**
+   - **THEN** `MatchManager` ghi nhận `Player C` vào `MatchRoster` với `IsAlive = false`, không làm tăng `AlivePlayerCount`, và sau khi `MatchRoster` đồng bộ về máy `Player C`, `ArenaSceneBootstrapper` chuyển `Player C` sang chế độ **Ghost Mode Spectator (`System #9`)** cho đến khi ván mới bắt đầu.
 
 9. **AC-09 (Đồng bộ chỉ số `+1 TotalWins` và `+Kills` một lần duy nhất lên `System #13 PlayFab` khi `MatchEnded`):**
    - **GIVEN** trận đấu vừa chuyển sang `CurrentPhase == MatchPhase.MatchEnded` với `WinnerPlayer == Player A` (`3 Kills`) và `Player B` (`1 Kill`)

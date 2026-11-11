@@ -320,43 +320,84 @@ namespace CapsuleArena.Core.Bootstrap
 
         private void HandleMatchStateChanged(MatchState state)
         {
+            if (state == MatchState.Countdown || state == MatchState.Playing)
+            {
+                _focusManager?.SetFocusFlag(InputFocusFlag.RebindModalOpen, false);
+                _focusManager?.SetFocusFlag(InputFocusFlag.LeaderboardOpen, false);
+                _focusManager?.SetFocusFlag(InputFocusFlag.MatchEnded, false);
+            }
+
             if (state == MatchState.Playing)
             {
                 EnforceLateJoinSpectatorStateIfRequired();
             }
         }
 
+        /// <summary>
+        /// Wires local camera, input, combat, HUD, and session services when the local player's avatar spawns.
+        /// Binds critical local gameplay systems first so non-critical UI/Auth callbacks can never abort camera or input binding.
+        /// </summary>
+        public void HandleLocalPlayerSpawned(PlayerRef localPlayer, NetworkObject explicitAvatarOverride = null)
+        {
+            if (_focusManager != null)
+            {
+                _focusManager.SetFocusFlag(InputFocusFlag.RebindModalOpen, false);
+                _focusManager.SetFocusFlag(InputFocusFlag.LeaderboardOpen, false);
+                if (_matchManager == null || _matchManager.CurrentMatchState != MatchState.Ended)
+                {
+                    _focusManager.SetFocusFlag(InputFocusFlag.MatchEnded, false);
+                }
+            }
+
+            NetworkObject avatarObj = explicitAvatarOverride != null
+                ? explicitAvatarOverride
+                : (_sessionManager != null ? _sessionManager.LocalPlayerAvatar : null);
+            BindLocalAvatarObject(localPlayer, avatarObj);
+
+            ConfigureSessionAndLobbyForLocalSpawnSafely(localPlayer);
+            EnforceLateJoinSpectatorStateIfRequired();
+        }
+
         private void HandleLocalPlayerSpawned(PlayerRef localPlayer)
         {
-            string localName = ResolveCapsuleDisplayName(localPlayer, isLocal: true);
-            if (_lobbyView != null)
-            {
-                _lobbyView.NotifyLocalPlayerSpawned(localPlayer);
-            }
+            HandleLocalPlayerSpawned(localPlayer, explicitAvatarOverride: null);
+        }
 
-            if (_playFabAuth != null)
+        private void ConfigureSessionAndLobbyForLocalSpawnSafely(PlayerRef localPlayer)
+        {
+            try
             {
-                _playFabAuth.SetDisplayName(localName);
-            }
+                string localName = ResolveCapsuleDisplayName(localPlayer, isLocal: true);
+                if (_lobbyView != null)
+                {
+                    _lobbyView.NotifyLocalPlayerSpawned(localPlayer);
+                }
 
-            if (_matchManager != null)
+                if (_playFabAuth != null)
+                {
+                    _playFabAuth.SetDisplayName(localName);
+                }
+
+                if (_matchManager != null)
+                {
+                    string activeSessionName = _sessionManager != null
+                        && _sessionManager.ActiveRunner != null
+                        && _sessionManager.ActiveRunner.SessionInfo.IsValid
+                        && !string.IsNullOrEmpty(_sessionManager.ActiveRunner.SessionInfo.Name)
+                        ? _sessionManager.ActiveRunner.SessionInfo.Name
+                        : null;
+                    _matchManager.ConfigureServices(_focusManager, activeSessionName, localPlayer);
+                }
+
+                if (_chatRouter != null)
+                {
+                    _chatRouter.ConfigureRosterForSession(localPlayer, localName, null, _matchManager);
+                }
+            }
+            catch (Exception ex)
             {
-                string activeSessionName = _sessionManager != null
-                    && _sessionManager.ActiveRunner != null
-                    && _sessionManager.ActiveRunner.SessionInfo.IsValid
-                    && !string.IsNullOrEmpty(_sessionManager.ActiveRunner.SessionInfo.Name)
-                    ? _sessionManager.ActiveRunner.SessionInfo.Name
-                    : null;
-                _matchManager.ConfigureServices(_focusManager, activeSessionName, localPlayer);
+                Debug.LogWarning($"[ArenaSceneBootstrapper] Non-fatal warning while syncing lobby/session metadata on local spawn: {ex.Message}");
             }
-
-            if (_chatRouter != null)
-            {
-                _chatRouter.ConfigureRosterForSession(localPlayer, localName, null, _matchManager);
-            }
-
-            BindLocalPlayerAvatar(localPlayer);
-            EnforceLateJoinSpectatorStateIfRequired();
         }
 
         private void EnforceLateJoinSpectatorStateIfRequired()
@@ -382,6 +423,12 @@ namespace CapsuleArena.Core.Bootstrap
             {
                 shouldEnterGhost = !stats.IsAlive;
             }
+            else if (_matchManager.IsReadyOnNetwork || (_sessionManager != null && _sessionManager.ActiveRunner != null))
+            {
+                // Wait for MasterClient's authoritative MatchRoster replication (which invokes HandleRosterCountsChanged)
+                // rather than prematurely eliminating a joining combatant before their roster slot arrives.
+                return;
+            }
             else
             {
                 shouldEnterGhost = !_matchManager.CanJoinCurrentMatchAlive();
@@ -394,9 +441,9 @@ namespace CapsuleArena.Core.Bootstrap
             }
         }
 
-        private void BindLocalPlayerAvatar(PlayerRef localPlayer)
+        /// <summary>Binds camera, mobility, combat, spectator, and HUD to the local player's <see cref="NetworkObject"/>.</summary>
+        public void BindLocalAvatarObject(PlayerRef localPlayer, NetworkObject avatarObj)
         {
-            NetworkObject avatarObj = _sessionManager != null ? _sessionManager.LocalPlayerAvatar : null;
             if (avatarObj != null && avatarObj.TryGetComponent(out PlayerHealth localHealth))
             {
                 WireSpawnedCapsuleCommon(localHealth);
@@ -408,6 +455,11 @@ namespace CapsuleArena.Core.Bootstrap
         {
             avatarObj.TryGetComponent(out PlayerCombatController localCombat);
             avatarObj.TryGetComponent(out PlayerMobilityController localMobility);
+            if (localMobility != null)
+            {
+                localMobility.BindLocalInputPoller(_inputPoller);
+            }
+
             if (localCombat != null)
             {
                 localCombat.BindLocalServices(_inputPoller, _cachedCombatAllowedPredicate);
@@ -416,6 +468,7 @@ namespace CapsuleArena.Core.Bootstrap
             if (avatarObj.TryGetComponent(out CameraController camCtrl))
             {
                 camCtrl.BindLocalCamera(_mainCamera, _inputPoller, _focusManager, _combatConfig);
+                camCtrl.StepCameraFrame(0f);
                 BindLocalCameraTrauma(localHealth, camCtrl);
             }
 

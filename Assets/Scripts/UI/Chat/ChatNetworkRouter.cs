@@ -23,6 +23,7 @@ namespace CapsuleArena.UI.Chat
         private int _publicRpcSentCount;
         private int _whisperRpcSentCount;
         private PlayerRef _lastWhisperTargetSent = PlayerRef.None;
+        private bool _isNetworkSpawned;
 
         /// <summary>Raised locally when a public message arrives: (senderName, sanitizedBody).</summary>
         public event Action<string, string> OnPublicMessageReceived;
@@ -51,8 +52,20 @@ namespace CapsuleArena.UI.Chat
         /// <summary>Gets the <see cref="PlayerRef"/> targeted by the most recent outgoing whisper.</summary>
         public PlayerRef LastWhisperTargetSent => _lastWhisperTargetSent;
 
-        private bool IsSpawnedOnRunner => Object != null && Runner != null;
+        private bool IsSpawnedOnRunner => _isNetworkSpawned && Object != null && Runner != null && Object.IsValid;
         private PlayerRef EffectiveLocalPlayer => IsSpawnedOnRunner ? Runner.LocalPlayer : _standaloneLocalPlayer;
+
+        /// <inheritdoc />
+        public override void Spawned()
+        {
+            _isNetworkSpawned = true;
+        }
+
+        /// <inheritdoc />
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            _isNetworkSpawned = false;
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void ResetStaticChatRouterEvents()

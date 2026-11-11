@@ -10,7 +10,7 @@ Accepted
 
 ## Last Verified
 
-2026-11-10
+2026-11-11
 
 ## Decision Makers
 
@@ -67,14 +67,16 @@ Người dùng yêu cầu nâng cấp hệ thống cận chiến thành 2 cơ ch
    - Với mỗi mục tiêu khác bản thân và đang sống (`IsAlive == true`), tính vector hướng phẳng $\hat{D}_{xz} = \text{Normalize}(P_{target,xz} - P_{self,xz})$:
      - **Chém dọc (`LMB`)**: Trục tâm quạt $\hat{A}_{vert} = \hat{F}_0$ (hướng nhìn thẳng trước mặt). Trúng đòn khi $\hat{D}_{xz} \cdot \hat{F}_0 \ge 0.9063078$ ($\cos 25^\circ$) và không bị tường `Layer 6` chắn (`!Physics.Raycast(eyePos, targetChest, dist, LineOfSightMask)`).
      - **Chém ngang Trái/Phải (`Key 1`: $s=-1$, `Key 3`: $s=+1$)**: Vì quạt quét một góc `90°` từ thẳng trước mặt ($\hat{F}_0$) sang ngang ($\hat{S}_s = \text{Normalize}(\hat{F}_0 \cos(s \cdot 90^\circ) + \hat{R}_0 \sin(s \cdot 90^\circ))$), trục phân giác của hình quạt lệch đúng `45°` về phía quét: $\hat{A}_{horiz}(s) = \text{Normalize}(\hat{F}_0 + s \cdot \hat{R}_0)$. Trúng đòn khi $\hat{D}_{xz} \cdot \hat{A}_{horiz}(s) \ge 0.7071068$ ($\cos 45^\circ$) và không bị tường `Layer 6` chắn.
-2. **Đồng bộ Xoay Thân & Tâm Ngắm `90°` (`Synchronized 90° Snap-Turn`)**:
-   - Khi kích hoạt Chém ngang ($s \in \{-1, +1\}$), ghi nhận `[Networked] float SweepStartYaw = CurrentYaw` và `[Networked] float SweepTargetYaw = Mathf.Repeat(SweepStartYaw + s * 90f, 360f)` trong `11 ticks` (`0.18s`).
-   - Tại mỗi tick $k \in [1..11]$, nội suy mượt theo hàm bậc ba `SmoothStep`: $\text{Yaw}(k) = \text{LerpAngle}(\text{SweepStartYaw}, \text{SweepTargetYaw}, u^2(3 - 2u))$ với $u = k / 11$, đồng thời cập nhật biến `CameraYaw` của `DualPerspectiveCameraController` theo đúng góc thân nhân vật.
+2. **Đồng bộ 1:1 Quạt Chém Ngang VFX & Xoay Thân + Tâm Ngắm `90°` (`Synchronized 90° Fan Sweep & Body Turn`)**:
+   - Khi kích hoạt Chém ngang ($s \in \{-1, +1\}$, bán kính `3.0m`, `30 dmg`, hồi chiêu `1.20s`), ghi nhận `[Networked] float SweepStartYaw = CurrentYaw` và `[Networked] float SweepTargetYaw = SweepStartYaw + s * 90f` trong `11 ticks` (`0.18s`).
+   - Tại mỗi tick và khung hình hiển thị `Render()`, tiến độ quét chuẩn hóa $u \in [0, 1]$ điều khiển **đồng bộ 1:1 cùng tốc độ** cho cả góc mở hình quạt VFX (`VisualSweepProgress` mở từ $0^\circ \to \pm 90^\circ$) lẫn góc xoay thân Capsule và `CameraYaw` của `CameraController`. Khi hình quạt vừa mở đủ $90^\circ$ cũng chính là thời điểm thân Capsule và Camera xoay xong đúng $\pm 90^\circ$.
+   - Ngay khi hết `11 ticks` (hoặc trạng thái chiến đấu về nghỉ / nhân vật tử trận), cơ chế tự phục hồi `EnsureYawLocksReleasedIfIdle()` lập tức mở khóa xoay chuột ngang (`SetHorizontalYawLocked(false)`), đảm bảo chuột không bao giờ bị kẹt trên cả Host lẫn máy khách.
 3. **Bắn Đạn Tầm Xa (`Ranged Fire` — `RMB`)**:
-   - Lấy một `NetworkProjectile` từ `FusionObjectPoolProvider` tại vị trí `MuzzleOffset = (0f, 1.1f, 0.75f)`, bay với vận tốc `28.0 m/s` trong tối đa `120 ticks` (`28.0m`), kiểm tra va chạm liên tục bằng `Physics.SphereCastNonAlloc` (`bán kính 0.20m`) để không xuyên qua mục tiêu mỏng.
+   - Lấy một `NetworkProjectile` từ `FusionObjectPoolProvider` truyền `EffectiveOwner` (`InputAuthority != None ? InputAuthority : StateAuthority`), bay với vận tốc `15.0 m/s` trong tối đa `30.0m` (`2.0s` / `120 ticks`, `15 dmg`, hồi chiêu `0.40s`), kiểm tra va chạm liên tục bằng `Physics.SphereCastNonAlloc` (`bán kính 0.20m`) để không xuyên qua mục tiêu mỏng.
 4. **Hệ thống Camera Kép (`FPS/TPS`) & Khán giả Hồn ma (`Ghost Spectator`)**:
-   - Phím `V` chuyển đổi giữa `TPS` (`Boom = 4.5m`, `ShoulderOffset = 0.65m`, `FOV = 65°`, chống xuyên tường bằng `Physics.SphereCast` bán kính `0.22m` trên `Layer 6`) và `FPS` (`EyeHeight = 1.55m`, `FOV = 80°`, chuyển `MeshRenderer` đầu/kính của nhân vật cục bộ sang `ShadowCastingMode.ShadowsOnly`).
-   - Khi `IsAlive == false`, tự động chuyển sang `GhostSpectatorController`: cho phép bay tự do ở tốc độ `9.0 m/s` (hoặc bấm `Tab` để bám theo góc nhìn TPS của những người chơi còn sống) và áp dụng vật liệu `M_Capsule_Ghost_Translucent` (`#38BDF8`, Alpha `0.35`).
+   - Ngay khi Avatar cục bộ spawn trên Host hoặc máy khách join phòng, `ArenaSceneBootstrapper.BindLocalAvatarObject` gọi tức thì `CameraController.BindLocalCamera` + `StepCameraFrame(0f)` (trong khi các Avatar từ xa tự động hủy cờ `_isBoundAsLocalPlayer = false` trong `Spawned()`).
+   - Phím `V` chuyển đổi giữa `TPS` (`Boom = 4.5m`, `ShoulderOffset = 0.65m`, `FOV = 65°`, chống xuyên tường bằng `Physics.SphereCast` bán kính `0.22m` trên `Layer 6`) và `FPS` (`EyeHeight = 1.55m`, `FOV = 80°`, chuyển `MeshRenderer` thân nhân vật cục bộ sang `ShadowCastingMode.ShadowsOnly` và ẩn chữ sát thương/hồi máu nổi của riêng bản thân).
+   - Khi `IsAlive == false` (hoặc khi join trễ sau cửa sổ `60.0s` của trận đấu), tự động chuyển sang `SpectatorController` (`9.0 m/s` bay tự do hoặc bám theo người sống sót).
 
 ### Architecture Diagram
 

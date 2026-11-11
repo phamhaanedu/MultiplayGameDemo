@@ -10,7 +10,7 @@ Accepted
 
 ## Last Verified
 
-2026-11-10
+2026-11-11
 
 ## Decision Makers
 
@@ -65,11 +65,11 @@ Tài liệu `match-manager-authority-failover.md` đã định nghĩa chi tiết
      - `[Networked] public PlayerRef WinnerPlayerRef { get; set; }`
      - `[Networked] public TickTimer PhaseTimer { get; set; }`
      - `[Networked] public int MatchSequenceId { get; set; }`
-   - Vòng đời 4 trạng thái:
-     - `WaitingForPlayers`: Chờ đủ tối thiểu `MinPlayersToStart = 2` người chơi kết nối.
-     - `Countdown`: Đếm ngược `5.0s` (`PhaseTimer`). Khóa tấn công, cho phép xoay camera quan sát. Nếu người chơi thoát làm tổng số người `< 2`, hủy đếm ngược quay về `WaitingForPlayers`.
-     - `Playing`: Mở khóa toàn bộ chiến đấu. Thời gian tối đa mỗi hiệp là `180.0s`. Mỗi khi có sự kiện `OnPlayerDied` hoặc `OnPlayerLeft`, máy giữ `StateAuthority` đếm lại số lượng `PlayerHealthController` có `IsAlive == true`.
-     - `MatchOver`: Khi `AliveCount <= 1` (hoặc hết `180.0s`), xác định `WinnerPlayerRef`, chuyển sang `MatchOver` trong `8.0s` để hiển thị bảng vinh danh và đẩy kết quả lên PlayFab trước khi cho phép bấm `Chơi Lại` (`Rematch`).
+   - Vòng đời 4 trạng thái (đọc toàn bộ thời lượng từ `MatchRulesConfigSO` — `Assets/Data/Config/DefaultMatchRulesConfig.asset` để dev tinh chỉnh trực tiếp trên Inspector):
+     - `WaitingForPlayers`: Chờ đủ tối thiểu `MinPlayersToStart = 2` người chơi kết nối (tối đa `MaxPlayersPerMatch = 4`). Hỗ trợ hàng đợi `PendingDisplayName` nếu máy khách đăng ký tên trước khi `MatchManager.Spawned()` hoàn tất gắn mạng.
+     - `Countdown`: Tự động đếm ngược `CountdownDurationSeconds = 5.0s` (`300 ticks`) ngay khi có người chơi thứ 2 vào phòng. Khóa tấn công, cho phép xoay camera quan sát. Nếu người chơi thoát làm tổng số người `< 2`, hủy đếm ngược quay về `WaitingForPlayers`.
+     - `Playing`: Mở khóa toàn bộ chiến đấu trong tối đa `PlayingDurationSeconds = 180.0s` (`10,800 ticks`). **Cửa sổ Vào Trễ Tham Chiến (`LateJoinActiveWindowSeconds = 60.0s`)**: Trong `60.0s` đầu tiên kể từ lúc bắt đầu `Playing`, người chơi thứ 3 và thứ 4 join phòng vẫn được sinh ra ở trạng thái sống (`IsAlive = true`) và tham gia chiến đấu bình thường; chỉ những ai join **sau `60.0s`** mới được đặt vào chế độ `Ghost Spectator` (máy khách chờ bảng `MatchRoster` đồng bộ xong trạng thái của mình trước khi kích hoạt camera khán giả).
+     - `MatchOver` (`Ended`): Khi `AliveCount <= 1` (hoặc hết `180.0s`), xác định `WinnerPlayerRef`, chuyển sang `Ended` trong `EndedDurationSeconds = 8.0s` để hiển thị bảng vinh danh và đẩy kết quả lên PlayFab trước khi cho phép `Rematch`.
 2. **Giao thức Kế thừa Quyền Tự động (`SharedModeMasterClient Failover`)**:
    - Đặt cờ `AllowStateAuthorityOverride = true` và tắt `DestroyWhenStateAuthorityLeaves = false` trên `NetworkObject` của `MatchManager`.
    - Khi callback `OnPlayerLeft(NetworkRunner runner, PlayerRef player)` kích hoạt hoặc trong `FixedUpdateNetwork()` phát hiện `Object.StateAuthority == PlayerRef.None` (hoặc chủ cũ không còn trong `runner.ActivePlayers`):

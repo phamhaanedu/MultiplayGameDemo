@@ -374,6 +374,10 @@ namespace CapsuleArena.UI.Lobby
             _rootCanvasGroup.alpha = visible ? 1.0f : 0.0f;
             _rootCanvasGroup.interactable = visible;
             _rootCanvasGroup.blocksRaycasts = visible;
+            if (!visible && UnityEngine.EventSystems.EventSystem.current != null)
+            {
+                UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(null);
+            }
         }
 
         private bool TryValidateLobbyInputs(bool isQuickJoin, out string resolvedName, out string roomCode)
@@ -534,6 +538,9 @@ namespace CapsuleArena.UI.Lobby
         {
             if (state == MatchState.Playing)
             {
+                if (_mainLobbyPanel != null) _mainLobbyPanel.SetActive(false);
+                if (_waitingRoomPanel != null) _waitingRoomPanel.SetActive(false);
+                if (_connectingOverlay != null) _connectingOverlay.SetActive(false);
                 ShowRootCanvas(false);
             }
             else if (state == MatchState.WaitingForPlayers && IsWaitingRoomVisible)

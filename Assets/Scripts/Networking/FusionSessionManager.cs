@@ -247,6 +247,7 @@ namespace CapsuleArena.Networking
                 }
             }
 
+            EnsureSceneMatchSystemsActive();
             NotifyDisconnectOnce(reason);
         }
 
@@ -269,7 +270,13 @@ namespace CapsuleArena.Networking
             Pose spawnPose = SelectOptimalSpawnPose(fallbackIndex);
 
             _localPlayerAvatar = runner.Spawn(_playerAvatarPrefab, spawnPose.position, spawnPose.rotation, player);
-            _inputPoller?.SetLookAngles(spawnPose.rotation.eulerAngles.y, 0f);
+            if (_inputPoller != null)
+            {
+                _inputPoller.ResetSimulationTickSampler();
+                _inputPoller.SetHorizontalYawLock(false, spawnPose.rotation.eulerAngles.y);
+                _inputPoller.SetLookAngles(spawnPose.rotation.eulerAngles.y, 0f);
+            }
+
             OnLocalPlayerSpawned?.Invoke(player);
         }
 
@@ -411,8 +418,23 @@ namespace CapsuleArena.Networking
         {
             _localAvatarSpawned = false;
             _localPlayerAvatar = null;
+            if (_inputPoller != null)
+            {
+                _inputPoller.ResetSimulationTickSampler();
+                _inputPoller.SetHorizontalYawLock(false, _inputPoller.CurrentYaw);
+            }
+
             _focusService?.ResetAllFlags();
+            EnsureSceneMatchSystemsActive();
             _matchManager?.ResetAfterSessionShutdown();
+        }
+
+        private void EnsureSceneMatchSystemsActive()
+        {
+            if (_matchManager != null && _matchManager.gameObject != null && !_matchManager.gameObject.activeSelf)
+            {
+                _matchManager.gameObject.SetActive(true);
+            }
         }
 
         private void NotifyDisconnectOnce(string reason)

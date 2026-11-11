@@ -78,6 +78,8 @@ namespace CapsuleArena.Player
         private readonly Vector3[] _livingPositionsBuffer = new Vector3[4];
         private NetworkTransform _networkTransform;
         private IDamageReceiver _selfDamageReceiver;
+        private LocalInputPoller _localInputPoller;
+        private bool _isNetworkSpawned;
         private MobilityState _localState;
         private int _localActiveTicks;
         private int _localTotalTicks;
@@ -128,7 +130,7 @@ namespace CapsuleArena.Player
         /// <summary>Gets the current local vertical velocity in m/s.</summary>
         public float CurrentVerticalVelocity => IsSpawnedOnRunner ? VerticalVelocityY : _localVerticalVelocity;
 
-        private bool IsSpawnedOnRunner => Object != null && Runner != null;
+        private bool IsSpawnedOnRunner => _isNetworkSpawned && Object != null && Runner != null && Object.IsValid;
 
         private void Awake()
         {
@@ -167,6 +169,29 @@ namespace CapsuleArena.Player
             _visualRoot = visualRoot;
             _cameraPivot = cameraPivot;
             _spawnManager = spawnManager;
+        }
+
+        /// <summary>
+        /// Binds the local <see cref="LocalInputPoller"/> so Shared Mode <c>StateAuthority</c> samples deterministic tick input directly.
+        /// </summary>
+        public void BindLocalInputPoller(LocalInputPoller inputPoller)
+        {
+            _localInputPoller = inputPoller;
+        }
+
+        /// <inheritdoc />
+        public override void Spawned()
+        {
+            _isNetworkSpawned = true;
+            _hasSweepYawOverride = false;
+        }
+
+        /// <inheritdoc />
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            _isNetworkSpawned = false;
+            _localInputPoller = null;
+            _hasSweepYawOverride = false;
         }
 
         /// <summary>
@@ -227,15 +252,27 @@ namespace CapsuleArena.Player
                 return;
             }
 
-            if (!GetInput(out NetworkInputData input))
-            {
-                input = default;
-                input.LookYaw = transform.eulerAngles.y;
-            }
-
+            NetworkInputData input = ResolveAuthoritativeTickInput();
             SyncNetworkStateToLocals();
             SimulateAuthoritativeTick(in input, Runner.DeltaTime, _combatConfig);
             SyncLocalsToNetworkState();
+        }
+
+        private NetworkInputData ResolveAuthoritativeTickInput()
+        {
+            if (_localInputPoller != null)
+            {
+                return _localInputPoller.SampleSimulationTickInput(Runner.Tick.Raw);
+            }
+
+            if (GetInput(out NetworkInputData input))
+            {
+                return input;
+            }
+
+            input = default;
+            input.LookYaw = transform.eulerAngles.y;
+            return input;
         }
 
         /// <inheritdoc />

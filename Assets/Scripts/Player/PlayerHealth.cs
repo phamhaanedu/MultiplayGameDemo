@@ -56,6 +56,7 @@ namespace CapsuleArena.Player
         private PlayerRef _standaloneOwner = PlayerRef.None;
         private bool _standaloneHasStateAuthority = true;
         private bool _isMatchPlaying = true;
+        private bool _isNetworkSpawned;
 
         /// <summary>Raised whenever CurrentHP changes: (currentHp, maxHp).</summary>
         public event Action<int, int> OnHealthChanged;
@@ -99,7 +100,7 @@ namespace CapsuleArena.Player
         public bool IsDead => IsSpawnedOnRunner ? (bool)NetworkedIsDead : _localIsDead;
 
         /// <inheritdoc />
-        public PlayerRef OwnerPlayer => IsSpawnedOnRunner ? Object.InputAuthority : _standaloneOwner;
+        public PlayerRef OwnerPlayer => IsSpawnedOnRunner ? ResolveNetworkOwner() : _standaloneOwner;
 
         /// <inheritdoc />
         public Transform ReceiverTransform => transform;
@@ -107,9 +108,14 @@ namespace CapsuleArena.Player
         /// <summary>Gets the <see cref="PlayerRef"/> credited with the killing blow.</summary>
         public PlayerRef LastKiller => IsSpawnedOnRunner ? NetworkedLastKiller : _localLastKiller;
 
-        private bool IsSpawnedOnRunner => Object != null && Runner != null;
+        private bool IsSpawnedOnRunner => _isNetworkSpawned && Object != null && Runner != null && Object.IsValid;
         private bool HasEffectiveStateAuthority => IsSpawnedOnRunner ? Object.HasStateAuthority : _standaloneHasStateAuthority;
         private bool IsMatchCurrentlyPlaying => _matchPlayingPredicate != null ? _matchPlayingPredicate() : _isMatchPlaying;
+
+        private PlayerRef ResolveNetworkOwner()
+        {
+            return Object.InputAuthority != PlayerRef.None ? Object.InputAuthority : Object.StateAuthority;
+        }
 
         private void Awake()
         {
@@ -177,10 +183,12 @@ namespace CapsuleArena.Player
         /// <inheritdoc />
         public override void Spawned()
         {
+            _isNetworkSpawned = true;
             _changeDetector = GetChangeDetector(ChangeDetector.Source.SimulationState);
-            _deathStateController?.SetIsLocalPlayerAvatar(Object.InputAuthority == Runner.LocalPlayer);
+            PlayerRef owner = ResolveNetworkOwner();
+            _deathStateController?.SetIsLocalPlayerAvatar(owner == Runner.LocalPlayer || Object.HasStateAuthority);
             DamageReceiverRegistry.Register(gameObject, this);
-            DamageReceiverRegistry.RegisterPlayerOwner(Object.InputAuthority, this);
+            DamageReceiverRegistry.RegisterPlayerOwner(owner, this);
 
             if (Object.HasStateAuthority)
             {
@@ -200,6 +208,12 @@ namespace CapsuleArena.Player
                 _hasAppliedDeathPresentation = true;
                 _deathStateController?.ApplyDeathState(isAuthoritativeSimulation: false, playEliminationEffects: false);
             }
+        }
+
+        /// <inheritdoc />
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            _isNetworkSpawned = false;
         }
 
         /// <inheritdoc />

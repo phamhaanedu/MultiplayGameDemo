@@ -10,7 +10,7 @@ Accepted
 
 ## Last Verified
 
-2026-11-10
+2026-11-11
 
 ## Decision Makers
 
@@ -59,9 +59,12 @@ Dự án đã chốt cấu hình Photon AppId `fbee3c4f-1f3b-42da-80b9-0e4d2b47f
 
 ## Decision
 
-1. **Quản lý Phiên Mạng `FusionSessionManager` (`GameMode.Shared`, `60Hz`)**:
-   - Khởi tạo `NetworkRunner` với `StartGameArgs { GameMode = GameMode.Shared, SessionName = roomCode, PlayerCount = 4, ObjectProvider = _poolProvider, SceneManager = _sceneManager }`.
-   - Khi callback `OnPlayerJoined(NetworkRunner runner, PlayerRef player)` kích hoạt cho `player == runner.LocalPlayer`, máy trạm cục bộ gọi `runner.Spawn(_playerPrefab, spawnPos, spawnRot, player)` để sinh ra nhân vật do chính mình giữ `StateAuthority`.
+1. **Quản lý Phiên Mạng `FusionSessionManager` (`GameMode.Shared`, `60Hz`, Phân tách `Quick Join` vs `Create / Join Room`)**:
+   - Khởi tạo `NetworkRunner` với `GameMode = GameMode.Shared`, `PlayerCount = 4` (`MatchRulesConfigSO.MaxPlayersPerMatch`), `ObjectProvider = _poolProvider`, `SceneManager = _sceneManager`:
+     - **`Quick Join` (`QuickJoinAsync`)**: Truyền `SessionName = string.Empty` để Photon ghép tự động vào bất kỳ phòng mở công khai nào còn chỗ (`< 4` người) hoặc tự tạo phòng mở mới nếu chưa có.
+     - **`Create / Join Room` (`JoinOrCreateRoomAsync(roomCode)`)**: Chuẩn hóa mã phòng in hoa (`Trim().ToUpperInvariant()`) để vào hoặc tạo đúng phòng có tên chỉ định.
+   - Khi callback `OnPlayerJoined(NetworkRunner runner, PlayerRef player)` kích hoạt cho `player == runner.LocalPlayer`, máy trạm cục bộ đặt lại bộ lấy mẫu tick (`ResetSimulationTickSampler()`), xóa khóa góc xoay ngang còn sót, sinh ra nhân vật qua `runner.Spawn(_playerPrefab, spawnPos, spawnRot, player)` và thực thi gắn kết ưu tiên Avatar cục bộ (`BindLocalAvatarObject`: Camera + Input + Combat + HUD) trước các tác vụ phụ trợ UI/PlayFab.
+   - Mọi `NetworkBehaviour` truy cập thuộc tính `[Networked]` bên ngoài `FixedUpdateNetwork()` đều kiểm tra cờ an toàn `IsSpawnedOnRunner` (`_isNetworkSpawned && Object != null && Runner != null && Object.IsValid`), và giải quyết định danh chủ sở hữu trong Shared Mode qua `EffectiveOwner = Object.InputAuthority != PlayerRef.None ? Object.InputAuthority : Object.StateAuthority`.
 2. **Hồ chứa Đối tượng Mạng `FusionObjectPoolProvider : INetworkObjectProvider`**:
    - Lúc nạp cảnh đấu trường (`PrewarmPools()`), khởi tạo sẵn một hàng đợi `Queue<NetworkObject>` gồm đúng **32** bản sao `NetworkProjectile` ở trạng thái ẩn (`SetActive(false)`).
    - Khi `AcquirePrefabInstance(NetworkRunner runner, NetworkPrefabAcquireContext context, out NetworkObject instance)` được gọi: lấy đối tượng từ hàng đợi, đặt lại vị trí/góc xoay, xóa `TrailRenderer`, đặt lại `Rigidbody` vận tốc về `0`, bật `SetActive(true)` và trả về `NetworkObjectAcquireResult.Success`.

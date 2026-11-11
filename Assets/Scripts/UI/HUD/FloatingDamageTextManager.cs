@@ -303,7 +303,8 @@ namespace CapsuleArena.UI.HUD
             return candidate.Object != null
                    && candidate.Runner != null
                    && candidate.Runner.LocalPlayer != PlayerRef.None
-                   && candidate.Object.InputAuthority == candidate.Runner.LocalPlayer;
+                   && (candidate.Object.InputAuthority == candidate.Runner.LocalPlayer
+                       || candidate.Object.StateAuthority == candidate.Runner.LocalPlayer);
         }
 
         private void CacheCameraTransform()

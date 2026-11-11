@@ -10,7 +10,7 @@ Accepted
 
 ## Last Verified
 
-2026-11-10
+2026-11-11
 
 ## Decision Makers
 
@@ -65,8 +65,10 @@ Unity 6.6 sử dụng gói **Unity Input System** làm mặc định. Cần mộ
 2. **Đổi Phím Tương tác & Tự động Hoán đổi Xung đột (`KeybindingRebindModal`)**:
    - Sử dụng `PerformInteractiveRebinding()` với thời gian chờ `5.0s`, phím `Escape` để hủy, và danh sách từ chối các phím hệ thống (`F1–F12`, `Windows/Command`).
    - Nếu phím mới trùng với một hành động chiến đấu/di chuyển khác, tự động hoán đổi (`Swap-on-Conflict`) hai phím cho nhau và nháy viền vàng hổ phách (`#F59E0B`) trên cả hai dòng trong `1.2s`.
-3. **Hợp nhất Tín hiệu Desktop + Mobile vào `NetworkInputData` (`16 bytes`)**:
-   - `LocalInputPoller` đọc trạng thái từ `InputAction` (PC) và hợp nhất bằng phép toán `Bitwise OR (|)` với mặt nạ nút bấm từ `MobileInputBridge` (cụm 7 nút ảo trên màn hình) trước khi ghi vào `NetworkInputData` trong `OnInput()`.
+3. **Hợp nhất Tín hiệu Desktop + Mobile vào `NetworkInputData` & Bộ Chốt Kép Shared Mode (`SampleSimulationTickInput`)**:
+   - `LocalInputPoller` đọc trạng thái từ `InputAction` (PC, hỗ trợ 14 hành động) và hợp nhất bằng phép toán `Bitwise OR (|)` với mặt nạ nút bấm từ `MobileInputBridge` (cụm 7 nút ảo trên màn hình).
+   - Cung cấp 2 bộ chốt độc lập (`_latchedButtons` cho `OnInput()` và `_simTickLatchedButtons` cho `SampleSimulationTickInput(Runner.Tick.Raw)`) để trong Photon Fusion 2 `GameMode.Shared`, mọi `NetworkBehaviour` giữ `StateAuthority` trên cùng 1 nhân vật (`PlayerMobilityController` và `PlayerCombatController`) đều đọc cùng một bản chụp `NetworkInputData` xác định theo tick mô phỏng trên cả Host lẫn máy khách join phòng.
+   - Màn hình Lobby (`LobbyViewController`) hiển thị 2 nhãn hướng dẫn tường minh (`PLAYER DISPLAY NAME` và `ROOM CODE (FOR CREATE / JOIN)`), phân biệt rõ nút `QUICK JOIN` và `CREATE / JOIN ROOM`, đồng thời giải phóng chọn `EventSystem` và xóa các cờ `InputFocusFlag` modal ngay khi bước vào `Countdown`/`Playing`.
 4. **Cơ chế Cờ Khóa Điều khiển (`InputFocusManager`)**:
    - Sử dụng mặt nạ bit `[Flags] enum InputFocusFlag { None = 0, ChatFocused = 1 << 0, RebindModalOpen = 1 << 1, PauseOrSettingsOpen = 1 << 2, MatchEnded = 1 << 3 }`.
    - Khi `ActiveFlags != InputFocusFlag.None`, `LocalInputPoller` lập tức trả về `NetworkInputData` rỗng (`MoveDirection = Vector2.zero`, `Buttons = default`), bảo đảm nhân vật đứng yên an toàn.

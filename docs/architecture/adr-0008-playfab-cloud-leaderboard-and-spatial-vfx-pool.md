@@ -10,7 +10,7 @@ Accepted
 
 ## Last Verified
 
-2026-11-10
+2026-11-11
 
 ## Decision Makers
 
@@ -69,7 +69,7 @@ Bảng màu hiệu ứng, thông số `AudioMixer` 4 nhóm và quy tắc `Materi
    - Truy vấn bảng xếp hạng (`GetLeaderboard` Top 20 và `GetLeaderboardAroundPlayer`) sử dụng bộ nhớ đệm `15.0s TTL` để tránh vượt giới hạn tần suất gọi API của PlayFab.
 3. **Âm thanh Không gian 3D & Hồ chứa Hiệu ứng URP (`SoundManager` & `CombatVFXManager`)**:
    - `SoundManager` định tuyến qua `4` nhóm `AudioMixer` (`Master`, `BGM`, `SFX_3D`, `UI_2D`) và quản lý hồ chứa `16` đối tượng `PooledAudioEmitter` (`spatialBlend = 1.0`, `Rolloff = Linear`, `minDistance = 2.0m`, `maxDistance = 28.0m`, biến thiên cao độ ngẫu nhiên `pitch ∈ [0.92, 1.08]`).
-   - `CombatVFXManager` quản lý hồ chứa `20` hệ thống hạt/vệt chém (`VFX_Slash_Vertical` `#F59E0B`, `VFX_Slash_Horizontal` `#38BDF8`, `VFX_Projectile_Impact` `#FACC15`, `VFX_Mobility_DashTrail`).
+   - `CombatVFXManager` quản lý hồ chứa hiệu ứng vệt chém (`VFX_Slash_Vertical` `50°` `#F59E0B`, `VFX_Slash_Horizontal` `90°` `#38BDF8` bung quạt đồng bộ 1:1 theo tiến độ xoay thân `VisualSweepProgress` trong `0.18s`, `VFX_Projectile_Impact` `#FACC15`, `VFX_Mobility_DashTrail`) phối hợp cùng hồ chứa `FloatingDamageTextManager` (`16` nhãn chữ nổi không rác bộ nhớ).
    - Hiệu ứng nháy sáng khi trúng đòn (`HitFlash` trong `0.08s`) sử dụng duy nhất một đối tượng `MaterialPropertyBlock` dùng chung để ghi đè `_EmissionColor = Color.white * 2.5f` trên `ChildVisualRoot`, kết hợp `DOTween` giật co giãn `(1.28, 0.72, 1.28)` và rung chấn camera (`Camera Trauma Shake`).
 
 ### Architecture Diagram

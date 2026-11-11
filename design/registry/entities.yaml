@@ -54,7 +54,7 @@
 #   in any other shape is reported as unsupported layout, with its number.
 
 version: 1
-last_updated: "2026-11-10"
+last_updated: "2026-11-11"
 
 # ─── ENTITIES ────────────────────────────────────────────────────────────────
 # Named game-world objects: enemies, NPCs, characters, factions, bosses.
@@ -84,15 +84,17 @@ entities:
       - design/gdd/game-concept.md
       - design/art/art-bible.md
     max_health: 100
-    move_speed: 6.5
-    dash_speed: 16.0
+    # Updated 2026-11-11 from 6.5/16.0/2.80/35/25/20 per design/gdd/character-combat-config.md (DefaultCapsuleCombatConfig.asset)
+    move_speed: 6.0
+    dash_speed: 18.0
     dodge_speed: 12.0
-    melee_range: 2.80
-    vertical_slash_damage: 35
-    horizontal_slash_damage: 25
-    ranged_damage: 20
+    melee_range: 2.50
+    horizontal_sweep_range: 3.00
+    vertical_slash_damage: 25
+    horizontal_slash_damage: 30
+    ranged_damage: 15
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: ranged_orb_projectile
     status: active
@@ -105,13 +107,14 @@ entities:
       - design/gdd/spatial-audio-combat-vfx.md
       - design/gdd/game-concept.md
       - design/art/art-bible.md
-    damage: 20
-    speed: 22.0
-    max_distance: 26.0
+    # Updated 2026-11-11 from 20/22.0/26.0/1.1818 per design/gdd/character-combat-config.md (DefaultCapsuleCombatConfig.asset)
+    damage: 15
+    speed: 15.0
+    max_distance: 30.0
     radius: 0.20
-    lifetime_seconds: 1.1818
+    lifetime_seconds: 2.00
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
 
 # ─── ITEMS ───────────────────────────────────────────────────────────────────
@@ -272,10 +275,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 6.5
+    # Updated 2026-11-11 from 6.5 per design/gdd/character-combat-config.md
+    value: 6.0
     unit: m/s
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: rotation_sensitivity
     status: active
@@ -293,10 +297,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 16.0
+    # Updated 2026-11-11 from 16.0 per design/gdd/character-combat-config.md
+    value: 18.0
     unit: m/s
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: dash_duration
     status: active
@@ -304,10 +309,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 0.25
+    # Updated 2026-11-11 from 0.25 per design/gdd/character-combat-config.md
+    value: 0.20
     unit: seconds
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: dash_cooldown
     status: active
@@ -315,10 +321,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 2.50
+    # Updated 2026-11-11 from 2.50 per design/gdd/character-combat-config.md
+    value: 3.00
     unit: seconds
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: dodge_speed
     status: active
@@ -337,10 +344,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 0.22
+    # Updated 2026-11-11 from 0.22 per design/gdd/character-combat-config.md
+    value: 0.25
     unit: seconds
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: dodge_cooldown
     status: active
@@ -348,10 +356,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 1.80
+    # Updated 2026-11-11 from 1.80 per design/gdd/character-combat-config.md
+    value: 1.50
     unit: seconds
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: melee_range
     status: active
@@ -359,9 +368,22 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 2.80
+    # Updated 2026-11-11 from 2.80 per design/gdd/character-combat-config.md
+    value: 2.50
     unit: meters
     added: 2026-11-10
+    revised: "2026-11-11"
+
+  - name: horizontal_sweep_range
+    status: active
+    source: design/gdd/character-combat-config.md
+    referenced_by:
+      - design/gdd/character-combat-config.md
+      - design/gdd/combat-melee-ranged-system.md
+      - design/gdd/spatial-audio-combat-vfx.md
+    value: 3.00
+    unit: meters
+    added: 2026-11-11
     revised: ""
 
   - name: vertical_slash_damage
@@ -370,10 +392,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 35
+    # Updated 2026-11-11 from 35 per design/gdd/character-combat-config.md
+    value: 25
     unit: HP
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: vertical_slash_angle
     status: active
@@ -382,10 +405,11 @@ constants:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
       - design/art/art-bible.md
-    value: 45.0
+    # Updated 2026-11-11 from 45.0 per design/gdd/character-combat-config.md
+    value: 50.0
     unit: degrees
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: vertical_slash_cooldown
     status: active
@@ -393,10 +417,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 0.65
+    # Updated 2026-11-11 from 0.65 per design/gdd/character-combat-config.md
+    value: 0.60
     unit: seconds
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: horizontal_slash_damage
     status: active
@@ -404,10 +429,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 25
+    # Updated 2026-11-11 from 25 per design/gdd/character-combat-config.md
+    value: 30
     unit: HP
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: horizontal_slash_angle
     status: active
@@ -426,11 +452,14 @@ constants:
     source: design/gdd/character-combat-config.md
     referenced_by:
       - design/gdd/character-combat-config.md
+      - design/gdd/combat-melee-ranged-system.md
+      - design/gdd/spatial-audio-combat-vfx.md
       - design/gdd/game-concept.md
-    value: 0.15
+    # Updated 2026-11-11 from 0.15 per design/gdd/combat-melee-ranged-system.md (1:1 fan + yaw sync over 11 ticks)
+    value: 0.18
     unit: seconds
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: horizontal_slash_cooldown
     status: active
@@ -438,10 +467,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 0.85
+    # Updated 2026-11-11 from 0.85 per design/gdd/character-combat-config.md
+    value: 1.20
     unit: seconds
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: ranged_damage
     status: active
@@ -449,10 +479,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 20
+    # Updated 2026-11-11 from 20 per design/gdd/character-combat-config.md
+    value: 15
     unit: HP
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: projectile_speed
     status: active
@@ -460,10 +491,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 22.0
+    # Updated 2026-11-11 from 22.0 per design/gdd/character-combat-config.md
+    value: 15.0
     unit: m/s
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: projectile_max_distance
     status: active
@@ -471,10 +503,11 @@ constants:
     referenced_by:
       - design/gdd/character-combat-config.md
       - design/gdd/game-concept.md
-    value: 26.0
+    # Updated 2026-11-11 from 26.0 per design/gdd/character-combat-config.md
+    value: 30.0
     unit: meters
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: projectile_radius
     status: active
@@ -496,10 +529,11 @@ constants:
       - design/gdd/combat-melee-ranged-system.md
       - design/gdd/combat-hud-mobile-action-pad.md
       - design/gdd/game-concept.md
-    value: 0.55
+    # Updated 2026-11-11 from 0.55 per design/gdd/character-combat-config.md
+    value: 0.40
     unit: seconds
     added: 2026-11-10
-    revised: ""
+    revised: "2026-11-11"
 
   - name: arena_size
     status: active
@@ -530,10 +564,47 @@ constants:
     referenced_by:
       - design/gdd/shared-mode-session-pool.md
       - design/gdd/match-manager-authority-failover.md
+      - design/gdd/keybinding-rebind-lobby-ui.md
       - design/gdd/combat-hud-mobile-action-pad.md
-    value: 8
+    # Updated 2026-11-11 from 8 per design/gdd/shared-mode-session-pool.md & DefaultMatchRulesConfig.asset
+    value: 4
     unit: players
     added: 2026-11-10
+    revised: "2026-11-11"
+
+  - name: min_players_to_start
+    status: active
+    source: design/gdd/match-manager-authority-failover.md
+    referenced_by:
+      - design/gdd/match-manager-authority-failover.md
+      - design/gdd/keybinding-rebind-lobby-ui.md
+    value: 2
+    unit: players
+    added: 2026-11-11
+    revised: ""
+
+  - name: match_countdown_seconds
+    status: active
+    source: design/gdd/match-manager-authority-failover.md
+    referenced_by:
+      - design/gdd/match-manager-authority-failover.md
+      - design/gdd/keybinding-rebind-lobby-ui.md
+      - design/ux/lobby-and-keybinding-ux-spec.md
+    value: 5.0
+    unit: seconds
+    added: 2026-11-11
+    revised: ""
+
+  - name: late_join_active_window_seconds
+    status: active
+    source: design/gdd/match-manager-authority-failover.md
+    referenced_by:
+      - design/gdd/match-manager-authority-failover.md
+      - design/gdd/camera-fps-tps-spectator.md
+      - design/ux/lobby-and-keybinding-ux-spec.md
+    value: 60.0
+    unit: seconds
+    added: 2026-11-11
     revised: ""
 
   - name: match_duration_seconds
@@ -542,9 +613,22 @@ constants:
     referenced_by:
       - design/gdd/match-manager-authority-failover.md
       - design/gdd/combat-hud-mobile-action-pad.md
-    value: 240.0
+    # Updated 2026-11-11 from 240.0 per design/gdd/match-manager-authority-failover.md (DefaultMatchRulesConfig.asset)
+    value: 180.0
     unit: seconds
     added: 2026-11-10
+    revised: "2026-11-11"
+
+  - name: floating_damage_lifetime_seconds
+    status: active
+    source: design/gdd/spatial-audio-combat-vfx.md
+    referenced_by:
+      - design/gdd/spatial-audio-combat-vfx.md
+      - design/gdd/combat-hud-mobile-action-pad.md
+      - design/ux/combat-hud-ux-spec.md
+    value: 0.85
+    unit: seconds
+    added: 2026-11-11
     revised: ""
 
   - name: billboard_height_offset

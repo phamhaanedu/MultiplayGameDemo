@@ -2,13 +2,14 @@
 
 > **Generated From**: Accepted ADRs (`ADR-0001` through `ADR-0008`) & `docs/registry/architecture.yaml`
 > **Engine**: Unity 6.6 (`6000.6.8f1`, URP) | **Language**: C# 9.0
-> **Last Updated**: 2026-11-10
+> **Last Updated**: 2026-11-11
 
 ## 1. Global Must-Do Rules (All Systems)
 
 1. **Encapsulation**: Always declare Inspector-tunable fields as `[SerializeField] private` using `_camelCase` naming and expose them via read-only `public` properties (`PascalCase`).
-2. **Data-Driven Config (`ADR-0001`)**: Read all gameplay constants, damage values, ranges, cooldown durations, and precomputed cosine/tick values from `CharacterCombatConfigSO` (`DefaultCapsuleCombatConfig.asset`) cached in `Awake()` or `Spawned()`.
+2. **Data-Driven Config (`ADR-0001`, `ADR-0006`, `ADR-0007`)**: Read all gameplay constants, match timing windows, and floating text visuals from `CharacterCombatConfigSO` (`DefaultCapsuleCombatConfig.asset`), `MatchRulesConfigSO` (`DefaultMatchRulesConfig.asset`), and `FloatingDamageTextConfigSO` (`DefaultFloatingDamageConfig.asset`) cached in `Awake()` or `Spawned()`.
 3. **Zero-Alloc 60Hz Hot Path (`ADR-0001`, `ADR-0003`, `ADR-0005`)**: Use pre-allocated static buffers with `Physics.OverlapSphereNonAlloc`, `Physics.CapsuleCastNonAlloc`, and `Physics.SphereCastNonAlloc` inside `FixedUpdateNetwork()`.
+4. **Shared Mode Safe Network Access & Tick Input (`ADR-0002`, `ADR-0003`)**: Guard all `[Networked]` property reads/writes outside `FixedUpdateNetwork()` with `IsSpawnedOnRunner` (`_isNetworkSpawned && Object != null && Runner != null && Object.IsValid`), resolve owner via `InputAuthority != PlayerRef.None ? InputAuthority : StateAuthority`, and sample local `StateAuthority` simulation input via `LocalInputPoller.SampleSimulationTickInput(Runner.Tick.Raw)`.
 
 ## 2. Global Never-Do Rules (Forbidden Patterns)
 
@@ -25,5 +26,5 @@
 |-------|---------------|------------------|
 | `Foundation` | `ADR-0001`, `ADR-0002`, `ADR-0003` | Atomic `.tmp` write for `keybindings.json`; merge PC `InputAction` and `MobileInputBridge` via bitwise OR into `NetworkInputData` (`16B`); zero out input when `InputFocusManager` flags are active; pre-warm 32 `NetworkProjectiles` in `FusionObjectPoolProvider`. |
 | `Core` | `ADR-0004` | Execute Walk (`6.0 m/s`), Jump (`7.5 m/s`), Dash (`Key 2`, `18.0 m/s`, `12 ticks`), and Dodge Roll (`Keys Q/E`, `12.0 m/s`, `15 ticks`) in `FixedUpdateNetwork()`; validate `IsAlive`, `MatchState == Playing`, and distance tolerance in `Rpc_RequestTakeDamage`; switch dead players to `Layer 10 (GhostSpectator)`. |
-| `Feature` | `ADR-0005`, `ADR-0006` | Validate melee sectors (`50°` Vertical Slash, `90°` Asymmetric Horizontal Sweep) with `LineOfSightMask (1 << 6)`; synchronize `±90°` body and camera yaw turn over `11 ticks` (`0.18s`); configure `AllowStateAuthorityOverride = true` on `MatchManager` and call `RequestStateAuthority()` on `IsSharedModeMasterClient` failover. |
-| `Presentation` | `ADR-0007`, `ADR-0008` | Update HUD, Billboard, and 7-button `MobileActionPadView` via C# Observer events and `OnChangedRender`; sanitize chat rich-text tags and enforce 5-message token bucket; guard PlayFab `UpdatePlayerStatistics` with `MatchSequenceId` idempotency and support Offline Guest fallback. |
+| `Feature` | `ADR-0005`, `ADR-0006` | Validate melee sectors (`50°` Vertical Slash `2.5m`, `90°` Asymmetric Horizontal Sweep `3.0m`) with `LineOfSightMask (1 << 6)`; synchronize 1:1 `90°` fan VFX expansion (`VisualSweepProgress`) with `±90°` body and camera yaw turn over `11 ticks` (`0.18s`); read `5.0s` countdown and `60.0s` active late-join window from `MatchRulesConfigSO`; configure `AllowStateAuthorityOverride = true` on `MatchManager` and call `RequestStateAuthority()` on `IsSharedModeMasterClient` failover. |
+| `Presentation` | `ADR-0007`, `ADR-0008` | Bind local avatar (`CameraController`, `PlayerMobilityController`, `PlayerCombatController`, `CombatHudPresenter`) first on spawn before optional UI/cloud wiring; update HUD, Billboard, `FloatingDamageTextManager` (unsigned Red/Green, `2/3` grow -> `1/3` shrink+fade, hidden for self in `FPS`), and 7-button `MobileActionPadView` via C# Observer events and `OnChangedRender`; sanitize chat rich-text tags; guard PlayFab `UpdatePlayerStatistics` with `MatchSequenceId` idempotency. |

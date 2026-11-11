@@ -112,6 +112,7 @@ namespace CapsuleArena.Combat
         private NetworkRunner.OnBeforeSpawned _cachedProjectileBeforeSpawned;
         private LocalInputPoller _localInputPoller;
         private Func<bool> _matchPlayingPredicate;
+        private bool _isNetworkSpawned;
 
         private Vector3 _pendingSpawnMuzzle;
         private Vector3 _pendingSpawnAimDir;
@@ -180,8 +181,10 @@ namespace CapsuleArena.Combat
         /// <summary>Gets the 3D world aim direction of the most recently fired ranged bolt.</summary>
         public Vector3 LastSpawnedAimDirection => _lastSpawnedAimDirection;
 
-        private bool IsSpawnedOnRunner => Object != null && Runner != null;
-        private PlayerRef EffectiveOwner => IsSpawnedOnRunner ? Object.InputAuthority : _standaloneOwner;
+        private bool IsSpawnedOnRunner => _isNetworkSpawned && Object != null && Runner != null && Object.IsValid;
+        private PlayerRef EffectiveOwner => IsSpawnedOnRunner
+            ? (Object.InputAuthority != PlayerRef.None ? Object.InputAuthority : Object.StateAuthority)
+            : _standaloneOwner;
         private bool IsCombatAllowedByMatch => _matchPlayingPredicate == null || _matchPlayingPredicate();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -280,11 +283,22 @@ namespace CapsuleArena.Combat
         /// <inheritdoc />
         public override void Spawned()
         {
+            _isNetworkSpawned = true;
+            _visualSweepActive = false;
             _currentAuthoritativeYaw = NormalizeSignedYaw(transform.eulerAngles.y);
             if (Object.HasStateAuthority)
             {
                 NetworkedSweepElapsedTicks = 0;
             }
+        }
+
+        /// <inheritdoc />
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            _isNetworkSpawned = false;
+            _visualSweepActive = false;
+            ReleaseYawLocks();
+            _localInputPoller = null;
         }
 
         /// <inheritdoc />
@@ -295,13 +309,25 @@ namespace CapsuleArena.Combat
                 return;
             }
 
-            if (!GetInput(out NetworkInputData input))
+            NetworkInputData input = ResolveAuthoritativeCombatInput();
+            SimulateCombatTick(in input, _combatConfig);
+        }
+
+        private NetworkInputData ResolveAuthoritativeCombatInput()
+        {
+            if (_localInputPoller != null)
             {
-                input = default;
-                input.LookYaw = _currentAuthoritativeYaw;
+                return _localInputPoller.SampleSimulationTickInput(Runner.Tick.Raw);
             }
 
-            SimulateCombatTick(in input, _combatConfig);
+            if (GetInput(out NetworkInputData input))
+            {
+                return input;
+            }
+
+            input = default;
+            input.LookYaw = _currentAuthoritativeYaw;
+            return input;
         }
 
         /// <summary>
@@ -504,12 +530,18 @@ namespace CapsuleArena.Combat
         {
             if (!_visualSweepActive || deltaTime < 0f)
             {
+                if (!_visualSweepActive && !IsPerformingHorizontalSweepTurn)
+                {
+                    EnsureYawLocksReleasedIfIdle();
+                }
+
                 return;
             }
 
             if (_playerHealth != null && _playerHealth.IsDead)
             {
                 _visualSweepActive = false;
+                ReleaseYawLocks();
                 return;
             }
 
@@ -519,15 +551,17 @@ namespace CapsuleArena.Combat
             _currentRenderSweepYaw = smoothYaw;
             transform.rotation = Quaternion.Euler(0f, smoothYaw, 0f);
 
-            bool hasLocalControl = !IsSpawnedOnRunner || (Object != null && Object.HasInputAuthority);
+            bool hasLocalControl = !IsSpawnedOnRunner || (Object != null && (Object.HasInputAuthority || Object.HasStateAuthority));
+            bool keepLocked = _visualSweepProgress < 1f || IsPerformingHorizontalSweepTurn;
             if (hasLocalControl && _localInputPoller != null)
             {
-                _localInputPoller.SetHorizontalYawLock(_visualSweepProgress < 1f || IsPerformingHorizontalSweepTurn, smoothYaw);
+                _localInputPoller.SetHorizontalYawLock(keepLocked, smoothYaw);
             }
 
-            if (_visualSweepProgress >= 1f && !IsPerformingHorizontalSweepTurn)
+            if (!keepLocked)
             {
                 _visualSweepActive = false;
+                ReleaseYawLocks();
             }
         }
 
@@ -541,11 +575,7 @@ namespace CapsuleArena.Combat
 
             if (!_localIsSweepingTurn)
             {
-                if (_mobilityYawOverrideActive)
-                {
-                    ReleaseYawLocks();
-                }
-
+                EnsureYawLocksReleasedIfIdle();
                 _currentAuthoritativeYaw = NormalizeSignedYaw(input.LookYaw);
                 return;
             }
@@ -559,11 +589,7 @@ namespace CapsuleArena.Combat
         {
             if (!ActiveSweepTurnTimer.IsRunning)
             {
-                if (_mobilityYawOverrideActive)
-                {
-                    ReleaseYawLocks();
-                }
-
+                EnsureYawLocksReleasedIfIdle();
                 _currentAuthoritativeYaw = NormalizeSignedYaw(input.LookYaw);
                 return;
             }
@@ -577,9 +603,9 @@ namespace CapsuleArena.Combat
             NetworkedSweepElapsedTicks++;
             _currentAuthoritativeYaw = nextYaw;
             transform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
-            _mobilityYawOverrideActive = true;
-            _mobilityController?.SetSweepYawOverride(true, nextYaw);
-            _localInputPoller?.SetHorizontalYawLock(!expired, nextYaw);
+            _mobilityYawOverrideActive = !expired;
+            _mobilityController?.SetSweepYawOverride(!expired, nextYaw);
+            _localInputPoller?.SetHorizontalYawLock(!expired && _visualSweepActive, nextYaw);
 
             EvaluateIncrementalSweepCleave(cfg, Runner.Tick.Raw);
 
@@ -587,6 +613,10 @@ namespace CapsuleArena.Combat
             {
                 _localIsSweepingTurn = false;
                 ActiveSweepTurnTimer = TickTimer.None;
+                if (!_visualSweepActive)
+                {
+                    ReleaseYawLocks();
+                }
             }
         }
 
@@ -678,6 +708,19 @@ namespace CapsuleArena.Combat
             ReleaseYawLocks();
         }
 
+        private void EnsureYawLocksReleasedIfIdle()
+        {
+            if (_visualSweepActive)
+            {
+                return;
+            }
+
+            if (_mobilityYawOverrideActive || (_localInputPoller != null && _localInputPoller.IsHorizontalYawLocked))
+            {
+                ReleaseYawLocks();
+            }
+        }
+
         private void ReleaseYawLocks()
         {
             _mobilityYawOverrideActive = false;
@@ -711,7 +754,7 @@ namespace CapsuleArena.Combat
                 _pendingSpawnAimDir = aimDirection;
                 _pendingSpawnConfig = cfg;
                 Quaternion rot = Quaternion.LookRotation(aimDirection, Vector3.up);
-                Runner.Spawn(_projectilePrefab, muzzlePos, rot, Object.InputAuthority, _cachedProjectileBeforeSpawned);
+                Runner.Spawn(_projectilePrefab, muzzlePos, rot, EffectiveOwner, _cachedProjectileBeforeSpawned);
                 return;
             }
 

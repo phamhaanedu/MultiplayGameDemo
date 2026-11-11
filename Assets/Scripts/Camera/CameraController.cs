@@ -170,8 +170,18 @@ namespace CapsuleArena.CameraSystem
         /// <inheritdoc />
         public override void Spawned()
         {
-            if (!Object.HasInputAuthority)
+            if (!Object.HasInputAuthority && !Object.HasStateAuthority)
             {
+                _isBoundAsLocalPlayer = false;
+            }
+        }
+
+        /// <inheritdoc />
+        public override void Despawned(NetworkRunner runner, bool hasState)
+        {
+            if (_isBoundAsLocalPlayer)
+            {
+                UnbindInputPoller();
                 _isBoundAsLocalPlayer = false;
             }
         }

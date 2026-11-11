@@ -1,6 +1,6 @@
 # Architecture Document: Capsule Arena: Last Man Standing
 
-> **Engine**: Unity 6.6 (6000.6.8f1) | **Language**: C# 9.0 | **Date**: 2026-11-10
+> **Engine**: Unity 6.6 (6000.6.8f1) | **Language**: C# 9.0 | **Date**: 2026-11-11
 > **Author**: technical-director + engine-programmer + gameplay-programmer
 
 ## 1. Architecture Overview
@@ -54,8 +54,8 @@ Kiến trúc của **Capsule Arena: Last Man Standing** được thiết kế th
 ## 2. Layer Architecture
 
 ### Layer 0: Foundation (`Foundation`)
-- **Modules**: `CharacterCombatConfigSO`, `ArenaSpawnManager`, `ArenaHazardZone`, `KeybindingManager`, `LocalInputPoller`, `MobileInputBridge`, `InputFocusManager`, `FusionSessionManager`, `FusionObjectPoolProvider`.
-- **Responsibilities**: Cung cấp kho dữ liệu bất biến lúc runtime (`ScriptableObject`), cấu trúc vật lý đấu trường và ma trận va chạm (`Layer 6 EnvironmentWall`, `Layer 8 PlayerCharacter`, `Layer 9 ArenaFloor`, `Layer 10 GhostSpectator`), hệ thống lưu trữ phím bấm `keybindings.json` kèm bộ trộn tín hiệu Desktop + Mobile (`NetworkInputData` 16-byte), và quản lý phiên mạng Photon Fusion 2 (`GameMode.Shared`) cùng bộ nhớ đệm đối tượng mạng (`INetworkObjectProvider`).
+- **Modules**: `CharacterCombatConfigSO`, `MatchRulesConfigSO`, `FloatingDamageTextConfigSO`, `ArenaSpawnManager`, `KeybindingManager`, `LocalInputPoller`, `MobileInputBridge`, `InputFocusManager`, `FusionSessionManager`, `FusionObjectPoolProvider`.
+- **Responsibilities**: Cung cấp kho dữ liệu bất biến lúc runtime (`ScriptableObject`: `DefaultCapsuleCombatConfig.asset`, `DefaultMatchRulesConfig.asset`, `DefaultFloatingDamageConfig.asset`), cấu trúc vật lý đấu trường và ma trận va chạm (`Layer 6 EnvironmentWall`, `Layer 8 PlayerCharacter`, `Layer 9 ArenaFloor`, `Layer 10 GhostSpectator`), hệ thống lưu trữ phím bấm `keybindings.json` kèm bộ chốt tín hiệu kép Desktop + Mobile (`SampleSimulationTickInput(Runner.Tick.Raw)` dùng chung cho mọi `NetworkBehaviour` giữ `StateAuthority` trên Shared Mode + `OnInput()` `16-byte` `NetworkInputData`), và quản lý phiên mạng Photon Fusion 2 (`GameMode.Shared`, phân tách `Quick Join` vs `Create / Join Room`, bảo vệ `[Networked]` bằng `IsSpawnedOnRunner`) cùng bộ nhớ đệm đối tượng mạng (`INetworkObjectProvider`).
 - **Engine Implementation**: Unity `ScriptableObject` với bộ nhớ đệm toán học tiền tính toán (`OnEnable`/`OnValidate`), Unity Input System (`InputAction` + `PerformInteractiveRebinding`), `System.IO` atomic `.tmp` JSON persistence, Photon Fusion 2 `NetworkRunner`, `INetworkRunnerCallbacks`, và `INetworkObjectProvider`.
 - **Dependency Rule**: Không phụ thuộc vào bất kỳ lớp nào phía trên (`Depends On: None`).
 
@@ -66,17 +66,17 @@ Kiến trúc của **Capsule Arena: Last Man Standing** được thiết kế th
 - **Dependency Rule**: Chỉ phụ thuộc vào **Layer 0 (`Foundation`)**. Không bao giờ gọi trực tiếp lên `Feature`, `Presentation` hoặc `Polish`; giao tiếp ngược lên thông qua C# Events (`OnHealthChanged`, `OnPlayerDied`, `OnMobilityCooldownUpdated`).
 
 ### Layer 2: Feature (`Feature`)
-- **Modules**: `PlayerCombatController`, `NetworkProjectile`, `DualPerspectiveCameraController`, `GhostSpectatorController`, `MatchManager`.
+- **Modules**: `PlayerCombatController`, `NetworkProjectile`, `CameraController`, `SpectatorController`, `MatchManager`.
 - **Responsibilities**:
-  - **Chiến đấu Đa hướng**: Thực thi Chém dọc (`Vertical Slash` — `LMB`, góc hình quạt `50°`, bán kính `2.4m`, `25 dmg`), Chém ngang Quét & Xoay `90°` (`Horizontal Sweep Left/Right` — `Keys 1/3`, góc hình quạt `90°`, bán kính `2.6m`, `30 dmg`, khóa xoay thân + tâm ngắm đúng `90°` trong `0.18s` / `11 ticks`), và Bắn đạn tầm xa (`Ranged Fire` — `RMB`, `15 dmg`, tốc độ `28.0 m/s` qua `FusionObjectPoolProvider`).
-  - **Camera Kép & Khán giả**: Chuyển đổi mượt mà giữa `TPS` (`4.5m` boom, `Physics.SphereCast` chống xuyên tường `Layer 6`) và `FPS` (`FOV 80°`, ẩn `Head/Visor` cục bộ bằng `ShadowCastingMode.ShadowsOnly`) qua phím `V`; kích hoạt chế độ bay tự do (`Ghost Free-Roam` `9.0 m/s`) hoặc theo dõi đồng đội (`Tab`) khi `IsAlive == false`.
-  - **Quản lý Trận đấu & Kế thừa Quyền**: Điều phối vòng đời trận đấu (`WaitingForPlayers` $\rightarrow$ `Countdown` $\rightarrow$ `Playing` $\rightarrow$ `MatchOver`), xét thắng thua **Last Man Standing**, và tự động chuyển giao quyền điều khiển (`Object.RequestStateAuthority()`) cho `Runner.IsSharedModeMasterClient` mới khi chủ phòng cũ ngắt kết nối.
+  - **Chiến đấu Đa hướng**: Thực thi Chém dọc (`Vertical Slash` — `LMB`, góc hình quạt `50°`, bán kính `2.5m`, `25 dmg`, `0.60s` CD), Chém ngang Quét & Xoay Đồng bộ 1:1 `90°` (`Horizontal Sweep Left/Right` — `Keys 1/3`, góc hình quạt `90°`, bán kính `3.0m`, `30 dmg`, `1.20s` CD, đồng bộ 1:1 tốc độ bung quạt VFX `VisualSweepProgress` với góc xoay thân Capsule + Camera đúng `±90°` trong `0.18s` / `11 ticks` kèm tự mở khóa chuột ngang `EnsureYawLocksReleasedIfIdle`), và Bắn đạn tầm xa (`Ranged Fire` — `RMB`, `15 dmg`, tốc độ `15.0 m/s`, tầm bay `30.0m`, `0.40s` CD qua `FusionObjectPoolProvider` với `EffectiveOwner`).
+  - **Camera Kép & Khán giả**: Gắn kết ưu tiên Avatar cục bộ (`BindLocalAvatarObject` $\rightarrow$ `BindLocalCamera` + `StepCameraFrame(0f)`) cho cả Host lẫn máy khách join phòng; chuyển đổi tức thì giữa `TPS` (`4.5m` boom, `Physics.SphereCast` chống xuyên tường `Layer 6`) và `FPS` (`FOV 80°`, ẩn Mesh thân cục bộ bằng `ShadowCastingMode.ShadowsOnly` và ẩn chữ sát thương/hồi máu nổi của riêng bản thân) qua phím `V`; kích hoạt chế độ `Ghost Spectator` khi tử trận hoặc khi join trễ sau cửa sổ `60.0s` (chờ bảng `MatchRoster` đồng bộ xong trên máy khách).
+  - **Quản lý Trận đấu & Kế thừa Quyền**: Điều phối vòng đời trận đấu cấu hình qua `MatchRulesConfigSO` (`WaitingForPlayers` chờ `MinPlayersToStart = 2` $\rightarrow$ `Countdown` `5.0s` $\rightarrow$ `Playing` `180.0s` cho phép người thứ 3, 4 join tham chiến sống trong `60.0s` đầu $\rightarrow$ `Ended` `8.0s`), xếp hàng `PendingDisplayName` nếu máy khách join trước `MatchManager.Spawned()`, xét thắng thua **Last Man Standing**, và tự động kế thừa quyền `StateAuthority` khi `SharedModeMasterClient` thoát phòng.
 - **Engine Implementation**: `Physics.OverlapSphereNonAlloc`, tích vô hướng phẳng (`Vector3.Dot` so sánh với `VerticalSlashCosHalfAngle` / `HorizontalSweepCosHalfAngle`), `Physics.Raycast` (`LineOfSightMask`), `LateUpdate` camera rig, và `INetworkRunnerCallbacks.OnPlayerLeft` failover.
 - **Dependency Rule**: Phụ thuộc vào **Layer 1 (`Core`)** và **Layer 0 (`Foundation`)**.
 
 ### Layer 3: Presentation (`Presentation`)
-- **Modules**: `ScreenSpaceCombatHUD`, `WorldSpaceBillboardUI`, `MobileActionPadView`, `LobbyFlowController`, `KeybindingRebindModal`, `InGameChatController`.
-- **Responsibilities**: Hiển thị thanh máu trên đầu nhân vật (`World-Space Billboard`), bảng nút bấm cảm ứng 7 kỹ năng ở góc dưới phải (`Mobile Action Pad`) đồng bộ trực tiếp với phím PC và vòng quay hồi chiêu (`Cooldown Radial Overlay`), luồng sảnh chờ & bảng cài đặt phím (`Keybinding Rebind Modal`), và hệ thống Chat Công khai / Thì thầm (`/w <Tên> <Nội dung>`) sử dụng `CanvasGroup` để luôn giữ `GameObject` hoạt động nhằm không bao giờ làm rớt gói tin RPC.
+- **Modules**: `CombatHudPresenter`, `OverheadBillboardPresenter`, `FloatingDamageTextManager`, `MobileActionPadView`, `LobbyViewController`, `KeybindingRebindModalController`, `InGameChatViewController`.
+- **Responsibilities**: Hiển thị thanh máu trên đầu nhân vật (`World-Space Billboard`), chữ sát thương/hồi máu bay lên (`FloatingDamageTextManager` đọc `FloatingDamageTextConfigSO`: số nguyên không dấu `-`/`+`, Đỏ `#FF3B3B` khi mất máu / Xanh `#22C55E` khi hồi máu, `2/3` đầu phóng to `0.85x -> 1.50x`, `1/3` cuối thu nhỏ `1.50x -> 0.55x` kèm mờ dần, hiện cho mọi người trừ bản thân ở góc nhìn `FPS`), bảng nút bấm cảm ứng 7 kỹ năng góc dưới phải (`Mobile Action Pad`), luồng sảnh chờ 2 nhãn tường minh (`PLAYER DISPLAY NAME` & `ROOM CODE (FOR CREATE / JOIN)`) phân tách `QUICK JOIN` và `CREATE / JOIN ROOM`, bảng cài đặt phím (`Keybinding Rebind Modal`), và hệ thống Chat Công khai / Thì thầm (`/w <Tên> <Nội dung>`) sử dụng `CanvasGroup`.
 - **Engine Implementation**: Unity uGUI (`Canvas`, `CanvasScaler` `1920x1080` `Match=0.5`, `CanvasGroup`, `TextMeshProUGUI`, `Image.fillAmount`), `IPointerDownHandler` / `IPointerUpHandler`.
 - **Dependency Rule**: Lắng nghe C# Events từ **Layer 0, 1, 2**. Tuyệt đối không ghi trực tiếp vào biến `[Networked]` của các lớp dưới mà chỉ gửi tín hiệu qua `MobileInputBridge`, `KeybindingManager`, hoặc RPC chat riêng biệt.
 

@@ -29,6 +29,10 @@ namespace CapsuleArena.Core.Input
         private IKeybindingService _keybindingService;
         private IInputFocusService _focusService;
         private NetworkButtons _pcLatchedButtons;
+        private NetworkButtons _simTickLatchedButtons;
+        private NetworkButtons _simMobileLatchedButtons;
+        private int _lastSampledSimulationTick = int.MinValue;
+        private NetworkInputData _lastSampledSimulationInput;
         private float _currentYaw;
         private float _currentPitch;
         private bool _isHorizontalYawLocked;
@@ -104,6 +108,8 @@ namespace CapsuleArena.Core.Input
             if (!hasFocus)
             {
                 _pcLatchedButtons = default;
+                _simTickLatchedButtons = default;
+                _simMobileLatchedButtons = default;
                 _mobileBridge?.ClearAllInputs();
             }
         }
@@ -175,13 +181,92 @@ namespace CapsuleArena.Core.Input
             }
 
             Vector2 pcMove = ReadPcMoveVector();
-            NetworkButtons pcButtons = ReadPcButtons();
+            NetworkButtons pcButtons = ReadPcButtonsFromLatch(_pcLatchedButtons);
             _pcLatchedButtons = default;
 
             Vector2 mobileMove = _mobileBridge != null ? _mobileBridge.MoveVector : Vector2.zero;
             NetworkButtons mobileButtons = _mobileBridge != null ? _mobileBridge.ConsumeButtons() : default;
+            if (mobileButtons.Bits != 0)
+            {
+                _simMobileLatchedButtons = new NetworkButtons(_simMobileLatchedButtons.Bits | mobileButtons.Bits);
+            }
 
             return MergeInputs(pcMove, pcButtons, mobileMove, mobileButtons, _currentYaw, _currentPitch, true);
+        }
+
+        /// <summary>
+        /// Samples deterministic 60Hz tick input directly for a Shared Mode <c>StateAuthority</c> avatar.
+        /// Multiple controllers on the same local avatar (e.g., mobility and combat) calling this within the same
+        /// <paramref name="simulationTick"/> receive the identical <see cref="NetworkInputData"/> snapshot without
+        /// losing single-press button latches to <c>Simulation+Client</c> multi-tick <c>OnInput</c> polling.
+        /// </summary>
+        public NetworkInputData SampleSimulationTickInput(int simulationTick)
+        {
+            EnsureDefaultServicesInitialized();
+            if (simulationTick == _lastSampledSimulationTick)
+            {
+                return _lastSampledSimulationInput;
+            }
+
+            _lastSampledSimulationTick = simulationTick;
+            bool allowed = _focusService == null || _focusService.IsGameplayInputAllowed;
+            if (!allowed)
+            {
+                _simTickLatchedButtons = default;
+                _simMobileLatchedButtons = default;
+                _mobileBridge?.ClearAllInputs();
+                _lastSampledSimulationInput = MergeInputs(Vector2.zero, default, Vector2.zero, default, _currentYaw, _currentPitch, false);
+                return _lastSampledSimulationInput;
+            }
+
+            if (_mobileBridge != null)
+            {
+                Vector2 touchLook = _mobileBridge.ConsumeLookDelta();
+                if (touchLook.sqrMagnitude > 0f)
+                {
+                    ApplyLookDeltaDegrees(touchLook);
+                }
+            }
+
+            Vector2 pcMove = ReadPcMoveVector();
+            NetworkButtons pcButtons = ReadPcButtonsFromLatch(_simTickLatchedButtons);
+            _simTickLatchedButtons = default;
+
+            Vector2 mobileMove = _mobileBridge != null ? _mobileBridge.MoveVector : Vector2.zero;
+            NetworkButtons directMobile = _mobileBridge != null ? _mobileBridge.ConsumeButtons() : default;
+            NetworkButtons mobileButtons = new NetworkButtons(_simMobileLatchedButtons.Bits | directMobile.Bits);
+            _simMobileLatchedButtons = default;
+
+            _lastSampledSimulationInput = MergeInputs(pcMove, pcButtons, mobileMove, mobileButtons, _currentYaw, _currentPitch, true);
+            return _lastSampledSimulationInput;
+        }
+
+        /// <summary>
+        /// Resets cached simulation tick sampling state and button latches on local avatar spawn or session reset.
+        /// </summary>
+        public void ResetSimulationTickSampler()
+        {
+            _lastSampledSimulationTick = int.MinValue;
+            _lastSampledSimulationInput = default;
+            _pcLatchedButtons = default;
+            _simTickLatchedButtons = default;
+            _simMobileLatchedButtons = default;
+        }
+
+        /// <summary>
+        /// Explicitly latches a <see cref="NetworkInputButtons"/> bit as if pressed during <c>Update()</c>
+        /// when gameplay focus allows it (supports deterministic sub-tick latch testing).
+        /// </summary>
+        public void LatchButton(NetworkInputButtons targetBit)
+        {
+            EnsureDefaultServicesInitialized();
+            if (_focusService != null && !_focusService.IsGameplayInputAllowed)
+            {
+                return;
+            }
+
+            _pcLatchedButtons.Set((int)targetBit, true);
+            _simTickLatchedButtons.Set((int)targetBit, true);
         }
 
         /// <summary>
@@ -241,6 +326,8 @@ namespace CapsuleArena.Core.Input
             if (_focusService != null && !_focusService.IsGameplayInputAllowed)
             {
                 _pcLatchedButtons = default;
+                _simTickLatchedButtons = default;
+                _simMobileLatchedButtons = default;
                 return;
             }
 
@@ -270,9 +357,9 @@ namespace CapsuleArena.Core.Input
             return Vector2.ClampMagnitude(new Vector2(x, y), 1.0f);
         }
 
-        private NetworkButtons ReadPcButtons()
+        private NetworkButtons ReadPcButtonsFromLatch(NetworkButtons initialLatch)
         {
-            NetworkButtons buttons = _pcLatchedButtons;
+            NetworkButtons buttons = initialLatch;
             SetIfPressed(ref buttons, GameInputAction.Jump, NetworkInputButtons.Jump);
             SetIfPressed(ref buttons, GameInputAction.DodgeLeft, NetworkInputButtons.DodgeLeft);
             SetIfPressed(ref buttons, GameInputAction.DodgeRight, NetworkInputButtons.DodgeRight);
@@ -318,6 +405,8 @@ namespace CapsuleArena.Core.Input
             if (!isGameplayAllowed)
             {
                 _pcLatchedButtons = default;
+                _simTickLatchedButtons = default;
+                _simMobileLatchedButtons = default;
             }
         }
 
@@ -326,6 +415,7 @@ namespace CapsuleArena.Core.Input
             if (WasPressedThisFrame(action))
             {
                 _pcLatchedButtons.Set((int)targetBit, true);
+                _simTickLatchedButtons.Set((int)targetBit, true);
             }
         }
 

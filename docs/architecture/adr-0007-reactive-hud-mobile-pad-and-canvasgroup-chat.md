@@ -10,7 +10,7 @@ Accepted
 
 ## Last Verified
 
-2026-11-10
+2026-11-11
 
 ## Decision Makers
 
@@ -59,9 +59,10 @@ Thiết kế chi tiết cho HUD, Billboard, Mobile Action Pad và Chat đã đư
 
 ## Decision
 
-1. **Thanh Máu Nổi `WorldSpaceBillboardUI` & HUD Chính (`ScreenSpaceCombatHUD`)**:
-   - `WorldSpaceBillboardUI` xoay mặt phẳng Canvas về phía camera trong `LateUpdate()` bằng phép gán `transform.rotation = _mainCameraTransform.rotation`. Sử dụng 2 lớp thanh máu: lớp chính cập nhật tức thời (`#22C55E` cho bản thân, `#EF4444` cho địch) và lớp bóng mờ (`Ghost Damage Bar` `#FACC15`) co lại sau `0.25s` bằng `DOTween`.
-   - `ScreenSpaceCombatHUD` lắng nghe sự kiện `OnHealthChanged`, `OnAliveCountChanged`, và `OnKillConfirmed` để cập nhật thanh máu góc dưới trái, bộ đếm sinh tồn góc trên phải, và danh sách hạ gục (`KillFeed` tối đa 4 dòng).
+1. **Thanh Máu Nổi `OverheadBillboardPresenter`, Chữ Sát Thương Bay Lên `FloatingDamageTextManager` & HUD Chính (`CombatHudPresenter`)**:
+   - `OverheadBillboardPresenter` xoay mặt phẳng Canvas về phía camera trong `LateUpdate()` bằng phép gán `transform.rotation = _mainCameraTransform.rotation`. Sử dụng 2 lớp thanh máu: lớp chính cập nhật tức thời (`#22C55E` cho bản thân, `#EF4444` cho địch) và lớp bóng mờ (`Ghost Damage Bar` `#FACC15`) co lại sau `0.25s`.
+   - `FloatingDamageTextManager` (cấu hình qua `FloatingDamageTextConfigSO` — `DefaultFloatingDamageConfig.asset`, hồ chứa `16` mục): Lắng nghe mọi biến thiên máu từ `PlayerHealth` để hiển thị số nguyên **không dấu `-`/`+`**, màu Đỏ (`DamageTextColor = #FF3B3B`) khi mất máu và màu Xanh lá (`HealTextColor = #22C55E`) khi hồi máu; bay từ đỉnh đầu mục tiêu (`Y = +2.65m`) lên cao thêm `+1.25m` trong `0.85s` (**`2/3` thời gian đầu phóng to `0.85x -> 1.50x`, `1/3` thời gian cuối thu nhỏ `1.50x -> 0.55x` đồng thời mờ dần `alpha -> 0`**); hiển thị cho tất cả người chơi bao gồm bản thân ở `TPS`, và chỉ ẩn đối với riêng nhân vật cục bộ khi đang ở góc nhìn `FPS`.
+   - `CombatHudPresenter` lắng nghe sự kiện `OnHealthChanged`, `OnAliveCountChanged`, và `OnKillConfirmed` để cập nhật thanh máu góc dưới, bộ đếm sinh tồn, và danh sách hạ gục (`KillFeed` tối đa 4 dòng).
 2. **Cụm 7 Nút Cảm ứng Đa Nền tảng (`MobileActionPadView`)**:
    - Bố trí 7 nút theo cung tròn thái học ở góc dưới phải màn hình: `VerticalSlash (LMB)` làm nút tâm lớn (`110x110 px`), bao quanh bởi `HorizontalLeft (1)`, `HorizontalRight (3)`, `RangedFire (RMB)`, `ForwardDash (2)`, `DodgeLeft (Q)`, và `DodgeRight (E)`.
    - Khi chạm cảm ứng hoặc click chuột lên nút (`IPointerDownHandler`), ghi cờ tương ứng vào `MobileInputBridge`. Khi bấm phím cứng trên PC hoặc chạm cảm ứng, nút thực hiện hiệu ứng lún `DOTween` (`0.90x`) và cập nhật lớp phủ quạt `Image.fillAmount = RemainingCooldown / TotalCooldown`.

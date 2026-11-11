@@ -67,25 +67,26 @@ Trước khi bước lên sàn đấu kẻ lưới 3D để tung ra những cú 
      - **Giai đoạn B — Đăng nhập PlayFab Bất đồng bộ (Trọng số `30%`):** Gọi `PlayFabAuthService.AuthenticateAsync()` (`System #13`) bằng `SystemInfo.deviceUniqueIdentifier` (hoặc Custom ID đã lưu). Nếu kết nối thành công hoặc chuyển sang chế độ Offline Fallback sau thời gian chờ tối đa (`5.0s`), cờ `playfab_auth_ready` chuyển từ `0` sang `1`.
      - **Giai đoạn C — Nạp Bất đồng bộ Lobby Scene (Trọng số `40%`):** Gọi `SceneManager.LoadSceneAsync("LobbyScene")` với `allowSceneActivation = false`, cập nhật biến `scene_async_progress` (`0.0 -> 1.0`). Khi `loading_progress_ratio` đạt `1.00` (`100%`), hệ thống kích hoạt `allowSceneActivation = true` kèm hiệu ứng chuyển cảnh `CanvasGroup` mượt mà trong `0.25s`.
 
-2. **Quy tắc Màn Hình 2 — Lobby Flow UI (`LobbyPanelUI` Architecture & Validation Contract):**
-   - `LobbyPanelUI` được bố trí trên một `Canvas` (`Screen Space - Overlay`, `UI Scale Mode = Scale With Screen Size`, độ phân giải tham chiếu `1920x1080`, `Match Width Or Height = 0.5`) gồm 4 khu vực chức năng rõ ràng:
-     - **Ô Nhập Tên Đấu Sĩ (`PlayerName InputField`):**
-       - Khi nạp Lobby, hệ thống đọc tên đã lưu từ `PlayerPrefs.GetString("PlayerPrefs_PlayerName", "")`. Nếu chưa có, hệ thống tự sinh tên mặc định hợp lệ dạng `"Fighter_" + Random.Range(100, 999)` (ví dụ: `"Fighter_482"`).
-       - Kiểm tra tính hợp lệ thời gian thực (`OnValueChanged`): Tên hợp lệ phải có độ dài sau khi cắt khoảng trắng hai đầu (`Trim()`) từ **`3` đến `16` ký tự**, và chỉ chứa chữ cái Latin, chữ số hoặc dấu gạch dưới (`^[a-zA-Z0-9_]{3,16}$`) để tương thích tuyệt đối với kiểu `[Networked] NetworkString<_16>` của Photon Fusion 2 (`System #4`).
-       - Nếu tên không hợp lệ, viền ô nhập chuyển sang màu **Đỏ Cảnh Báo (`#EF4444`)**, hiển thị dòng nhắc *"Tên đấu sĩ cần từ 3–16 ký tự (chữ cái, số hoặc dấu _)"* và tạm khóa (`interactable = false`) nút **`Vào Đấu Trường`**. Khi tên hợp lệ và người chơi kết thúc chỉnh sửa (`OnEndEdit`), hệ thống lưu ngay vào `PlayerPrefs` và gọi bất đồng bộ `PlayFabClientAPI.UpdateUserTitleDisplayName` (`System #13`).
-     - **Hộp Chọn Máy Chủ Khu Vực (`Region Dropdown`) & Ô Nhập Tên Phòng (`SessionName InputField`):**
-       - `TMP_Dropdown` chứa đúng **4 tùy chọn mã vùng cố định** khớp với `AllowedRegions` của `System #4`:
-         1. `"Châu Á — Singapore (asia)"` $\rightarrow$ mã vùng `"asia"` *(Mặc định, lưu trong `PlayerPrefs_PreferredRegion`)*.
-         2. `"Nhật Bản — Tokyo (jp)"` $\rightarrow$ mã vùng `"jp"`.
-         3. `"Bắc Mỹ — Đông (us)"` $\rightarrow$ mã vùng `"us"`.
-         4. `"Châu Âu — Amsterdam (eu)"` $\rightarrow$ mã vùng `"eu"`.
-       - Ô nhập `SessionName` (`TMP_InputField`) có giá trị mặc định là **`"ArenaRoom_01"`** (tự động điền lại `"ArenaRoom_01"` nếu người chơi xóa trắng ô nhập), cho phép từ `3–24 ký tự` chữ/số/gạch dưới để bạn bè dễ dàng nhập cùng tên phòng và vào chung trận đấu Shared Mode (`MaxPlayersPerRoom = 8`).
-     - **Nút Hành Động Chính `Vào Đấu Trường (Join / Start Shared Mode)`:**
-       - Khi nhấn nút, `LobbyPanelUI` khóa nút bấm để chống click đúp (`double-click guard`), bật lớp phủ trạng thái kết nối (`ConnectingOverlay` qua `CanvasGroup`), và gọi `NetworkSessionManager.StartSharedSession(playerName, sessionName, selectedRegion)` (`System #4`).
-       - Nếu kết nối thất bại sau chu kỳ thử lại của `System #4`, bảng thông báo lỗi tiếng Việt hiển thị rõ nguyên nhân (ví dụ: *"Phòng đã đầy (8/8) hoặc mất kết nối mạng. Vui lòng thử lại!"*) và mở khóa lại nút **`Vào Đấu Trường`**.
-     - **Thanh Tiện Ích Góc Trên (`Top Utility Bar`):**
-       - Nút **`Bảng Xếp Hạng (Leaderboard)`**: Mở cửa sổ Modal hiển thị bảng xếp hạng chiến thắng/hạ gục từ PlayFab (`System #13`).
-       - Nút **`Cài Đặt Phím Bấm (Keybinding Settings)`** (biểu tượng Bánh răng + bàn phím): Mở trực tiếp **Bảng `KeybindingRebindModalUI` (Màn hình 3)** ngay tại Lobby.
+2. **Quy tắc Màn Hình 2 — Lobby Flow UI (`LobbyViewController` Architecture, Explicit Labels & Dual Room Join Modes):**
+   - `LobbyViewController` được bố trí trên một `Canvas` (`Screen Space - Overlay`, `UI Scale Mode = Scale With Screen Size`, độ phân giải tham chiếu `1920x1080`, `Match Width Or Height = 0.5`) gồm các khu vực chức năng tường minh:
+     - **Ô Nhập Tên Đấu Sĩ Kèm Nhãn Rõ Ràng (`PLAYER DISPLAY NAME` + `PlayerName InputField`):**
+       - Phía trên ô nhập đầu tiên luôn hiển thị nhãn cố định **`PLAYER DISPLAY NAME`** (chữ in hoa rõ nét, màu `#94A3B8`) để người chơi mới nhìn vào biết ngay đây là tên hiển thị nhân vật của mình trên thanh máu đầu và bảng xếp hạng.
+       - Khi nạp Lobby, hệ thống đọc tên đã lưu từ `PlayerPrefs` (hoặc tự sinh tên mặc định hợp lệ dạng `"Fighter_" + Random.Range(100, 999)`).
+       - Kiểm tra tính hợp lệ (`Trim()`, độ dài **`3` đến `16` ký tự**) tương thích với `[Networked] NetworkString<_16>` của Photon Fusion 2 (`System #4`). Khi kết nối vào phòng mà đối tượng Scene `MatchManager` trên máy Client join chưa hoàn tất `Spawned()` (`Object.IsValid == false`), tên người chơi được lưu tạm vào hàng đợi **`PendingDisplayName`** trên `MatchManager` và tự động flush `Rpc_RegisterDisplayName` ngay khoảnh khắc `MatchManager.Spawned()` kích hoạt.
+     - **Ô Nhập Mã Phòng Kèm Nhãn Rõ Ràng (`ROOM CODE (FOR CREATE / JOIN)` + `RoomCode InputField`):**
+       - Phía trên ô nhập thứ hai luôn hiển thị nhãn cố định **`ROOM CODE (FOR CREATE / JOIN)`** nhằm giải thích trực quan rằng ô mã phòng này chỉ dùng cho chế độ tạo/vào phòng theo tên, không ảnh hưởng tới nút ghép trận nhanh.
+       - Giá trị nhập vào được chuẩn hóa tự động `Trim().ToUpperInvariant()` (ví dụ `"test"` $\rightarrow$ `"TEST"`, nếu bỏ trống khi bấm `Create / Join Room` sẽ dùng mã mặc định `"ARENA"`).
+     - **Hai Chế Độ Vào Phòng Tách Biệt Rõ Ràng (`QUICK JOIN` vs `CREATE / JOIN ROOM` — `MaxPlayersPerMatch = 4`):**
+       - **Nút `QUICK JOIN` (Ghép trận ngẫu nhiên công khai — Màu Xanh Cyan `#00B4D8`):**
+         - Bỏ qua hoàn toàn nội dung đang gõ trong ô `ROOM CODE`, gọi `FusionSessionManager.StartQuickJoinAsync()` với `SessionName = ""` (`string.Empty`), `IsOpen = true`, `IsVisible = true`, `PlayerCount = 4` trên `GameMode.Shared`.
+         - Photon Cloud tự động tìm và đưa người chơi vào bất kỳ phòng công khai nào đang mở và còn chỗ trống (`< 4` người, kể cả phòng vừa bắt đầu trận trong `60s` đầu theo `MatchRulesConfigSO`). Nếu chưa có phòng trống nào trên Region hiện tại, Photon tự tạo một phòng công khai mới để người bấm `Quick Join` tiếp theo ghép chung ngay lập tức.
+       - **Nút `CREATE / JOIN ROOM` (Tạo hoặc vào phòng theo mã — Màu Cam Hổ Phách `#F59E0B`):**
+         - Đọc chuỗi trong ô `ROOM CODE (FOR CREATE / JOIN)`, chuẩn hóa in hoa và truyền trực tiếp vào `StartGameArgs.SessionName`.
+         - Tất cả người chơi nhập **cùng một mã phòng** sẽ kết nối vào chính xác phòng đó: người đầu tiên khởi tạo phòng trở thành `SharedModeMasterClient` (`[HOST]`), các máy vào sau join làm Client ngang hàng trong cùng phòng (`ROOM: <CODE> (X/4)`).
+       - **Màn Hình Phòng Chờ (`Waiting Room Panel`):** Hiển thị tiêu đề `ROOM: <SESSION_NAME> (X/4)`, danh sách 4 khe đấu sĩ (`[HOST]` + tên hiển thị đồng bộ từ `MatchRoster`), trạng thái chờ tối thiểu `2` người (`Waiting for players (1/4)...`) hoặc đồng hồ đếm ngược **`5.0s`** (`CountdownDurationSeconds` trong `MatchRulesConfigSO`) ngay khi người thứ 2 gia nhập, cùng nút `LEAVE ROOM`. Khi trận đấu chuyển sang `MatchState.Playing`, toàn bộ `LobbyViewController` tự động ẩn sạch và giải phóng `EventSystem` focus để trao quyền điều khiển 100% cho đấu trường.
+     - **Thanh Tiện Ích (`LEADERBOARD` & `SETTINGS & KEYS`):**
+       - Nút **`LEADERBOARD`**: Mở cửa sổ Modal hiển thị bảng xếp hạng chiến thắng/hạ gục từ PlayFab (`System #13`).
+       - Nút **`SETTINGS & KEYS`**: Mở trực tiếp **Bảng `KeybindingRebindModalUI` (Màn hình 3)** ngay tại Lobby.
 
 3. **Quy tắc Màn Hình 3 — Bảng Cài Đặt & Gán Lại Phím Bấm Trong Trận (`In-Game Keybinding Rebind Modal UI`):**
    - **Kiến trúc `CanvasGroup` Thuần Khiết (`Zero SetActive Spikes`):**
@@ -353,11 +354,11 @@ Thiết kế thị giác và âm thanh của cả 3 màn hình tuân thủ nghi�
 
 1. **Bố Cục Chi Tiết 3 Màn Hình Chuẩn `1920x1080` (`Scale With Screen Size`):**
    - **Màn hình 1 (`LoadingBootstrapUI`):** Nền tối chiến thuật `#090D16`, Logo *Capsule Arena: Last Man Standing* ở tâm trên, thanh tiến trình `ProgressBar` rộng `640px x 16px` ở phần dưới kèm số phần trăm `0% – 100%` (phông `Space Grotesk Bold 24pt`) và dòng mô tả trạng thái chi tiết bên dưới (`Inter Medium 16pt`).
-   - **Màn hình 2 (`LobbyPanelUI`):** Khung thẻ trung tâm `560px x 620px` chứa:
-     - Ô nhập `PlayerName` (`TMP_InputField`, chiều cao `52px`, giới hạn `characterLimit = 16`).
-     - Hàng đôi gồm `Region Dropdown` (`asia`, `jp`, `us`, `eu`) bên trái (`250px`) và ô nhập `SessionName` (mặc định `"ArenaRoom_01"`) bên phải (`250px`).
-     - Nút chính **`VÀO ĐẤU TRƯỜNG (JOIN ARENA)`** rộng `500px x 68px` màu **Cam Năng Lượng (`#F97316` $\rightarrow$ `#F59E0B`)**.
-     - Thanh công cụ góc trên phải chứa nút **`Bảng Xếp Hạng (Leaderboard)`** và nút **`Cài Đặt Phím Bấm (Keybinding Settings)`**.
+   - **Màn hình 2 (`LobbyViewController`):** Khung thẻ trung tâm `560px x 640px` chứa:
+     - Nhãn **`PLAYER DISPLAY NAME`** phía trên ô nhập `PlayerName` (`TMP_InputField`, chiều cao `52px`, giới hạn `characterLimit = 16`).
+     - Nhãn **`ROOM CODE (FOR CREATE / JOIN)`** phía trên ô nhập `RoomCode` (`TMP_InputField`, tự động chuẩn hóa chữ in hoa).
+     - Hàng đôi 2 nút vào phòng phân biệt màu sắc: **`QUICK JOIN`** (bên trái, màu Xanh Cyan `#00B4D8` — tự động tìm phòng công khai mở `< 4` người với `SessionName = ""`) và **`CREATE / JOIN ROOM`** (bên phải, màu Cam Hổ Phách `#F59E0B` — tạo hoặc vào đúng mã phòng đã nhập).
+     - Hàng đôi tiện ích bên dưới gồm nút **`LEADERBOARD`** và nút **`SETTINGS & KEYS`**, cùng màn hình **`Waiting Room`** (`ROOM: <CODE> (X/4)`, tự đếm ngược `5.0s` khi có người thứ 2).
    - **Màn hình 3 (`KeybindingRebindModalUI`):** Khung cửa sổ Modal trung tâm `820px x 740px` gồm:
      - **Header (`64px`):** Tiêu đề `"CÀI ĐẶT & GÁN LẠI PHÍM BẤM (KEYBINDING SETTINGS)"` và nút đóng nhanh `[X]` góc phải.
      - **Body (`ScrollRect` cao `540px`):** Chứa 13 hàng `KeybindRowUI` (mỗi hàng cao `44px`, khoảng cách `6px`), bên trái hiển thị tên hành động tiếng Việt + mô tả ngắn, bên phải là nút `KeycapButton` rộng `180px x 36px` hiển thị nhãn phím hiện tại trong `StagedBindingBuffer` (hoặc dòng nhắc vàng `#F59E0B` khi đang chờ nhấn phím).
@@ -386,10 +387,10 @@ Thiết kế thị giác và âm thanh của cả 3 màn hình tuân thủ nghi�
    - **WHEN** người chơi nhập chuỗi tên vào ô `PlayerName`
    - **THEN** nếu chuỗi sau khi `Trim()` có độ dài `< 3` hoặc `> 16` ký tự hoặc chứa ký tự ngoài `[a-zA-Z0-9_]` (`is_player_name_valid == false`), nút **`Vào Đấu Trường`** lập tức bị khóa (`interactable = false`) kèm viền đỏ `#EF4444`; ngược lại nếu `is_player_name_valid == true`, nút **`Vào Đấu Trường`** được mở khóa, tên được lưu vào `PlayerPrefs` và đồng bộ lên PlayFab `DisplayName`.
 
-3. **AC-03 (Chọn khu vực `Region`, nhập tên phòng `SessionName` và kết nối vào Photon Fusion 2 Shared Mode):**
-   - **GIVEN** `LobbyPanelUI` đang hiển thị với `PlayerName` hợp lệ, `Region Dropdown` cung cấp đúng 4 mã vùng (`asia`, `jp`, `us`, `eu`, mặc định `asia`) và ô `SessionName` mặc định là `"ArenaRoom_01"`
-   - **WHEN** người chơi nhấn nút **`Vào Đấu Trường (Join / Start Shared Mode)`**
-   - **THEN** nút bấm lập tức khóa chống click đúp, lớp phủ `ConnectingOverlay` hiện lên qua `CanvasGroup`, và hệ thống gọi `NetworkSessionManager.StartSharedSession(playerName, sessionName, selectedRegion)` (`System #4`) để kết nối vào phiên `GameMode.Shared`.
+3. **AC-03 (Phân biệt chính xác `Quick Join` và `Create / Join Room` trên Photon Fusion 2 Shared Mode `MaxPlayers = 4`):**
+   - **GIVEN** `LobbyViewController` hiển thị đầy đủ 2 nhãn `PLAYER DISPLAY NAME` và `ROOM CODE (FOR CREATE / JOIN)` với `PlayerName` hợp lệ
+   - **WHEN** người chơi nhấn **`QUICK JOIN`**, hệ thống truyền `SessionName = ""` (`IsOpen = true`, `IsVisible = true`, `PlayerCount = 4`) để tự động ghép vào phòng công khai còn chỗ; ngược lại khi người chơi nhấn **`CREATE / JOIN ROOM`**, hệ thống chuẩn hóa mã phòng in hoa (`Trim().ToUpperInvariant()`) và truyền vào `SessionName`
+   - **THEN** hai người chơi cùng bấm `QUICK JOIN` hoặc cùng nhập một mã phòng ở `CREATE / JOIN ROOM` sẽ kết nối vào chung một phòng, tự động bắt đầu đếm ngược `5.0s` ngay khi có người thứ 2, và đồng bộ chính xác `DisplayName` của cả Host lẫn Client join (thông qua hàng đợi `PendingDisplayName` nếu `MatchManager` chưa kịp `Spawned()`).
 
 4. **AC-04 (Đóng/mở bảng `KeybindingRebindModalUI` bằng `CanvasGroup` và khóa đầu vào `InputFocusManager` trong trận):**
    - **GIVEN** người chơi đang trong trận đấu (`InputFocusState.CombatActive`) và nhấn phím `ESC` hoặc click vào nút biểu tượng Bánh răng góc trên phải

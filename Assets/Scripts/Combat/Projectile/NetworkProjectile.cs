@@ -162,7 +162,8 @@ namespace CapsuleArena.Combat.Projectile
                 return;
             }
 
-            if (!Runner.IsPlayerValid(Object.InputAuthority) || LifetimeTimer.Expired(Runner))
+            PlayerRef effectiveOwner = Object.InputAuthority != PlayerRef.None ? Object.InputAuthority : Object.StateAuthority;
+            if (!Runner.IsPlayerValid(effectiveOwner) || LifetimeTimer.Expired(Runner))
             {
                 Runner.Despawn(Object);
                 return;
@@ -177,7 +178,7 @@ namespace CapsuleArena.Combat.Projectile
                 speed,
                 radius,
                 damage,
-                Object.InputAuthority,
+                effectiveOwner,
                 LaunchOrigin,
                 Runner.Tick.Raw);
 

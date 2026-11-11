@@ -54,44 +54,41 @@ Khi bước vào *Capsule Arena: Last Man Standing*, người chơi hóa thân t
 ### Core Rules
 
 1. **Quy tắc Ủy Quyền Thực Thi Trong `FixedUpdateNetwork()` Trên Shared Mode (StateAuthority Simulation Contract):**
-   - Toàn bộ logic đọc đầu vào tấn công (`GetInput(out NetworkInputData input)`), kiểm tra điều kiện sẵn sàng chiến đấu, khởi tạo bộ đếm hồi chiêu `[Networked] TickTimer`, quét vùng va chạm cận chiến và gọi `Runner.Spawn()` bắn đạn từ Pool **chỉ được thực thi bên trong phương thức `FixedUpdateNetwork()` trên máy sở hữu `Object.HasStateAuthority == true`**.
+   - Toàn bộ logic đọc đầu vào tấn công (ưu tiên lấy mẫu trực tiếp `_localInputPoller.SampleSimulationTickInput(Runner.Tick.Raw)` khi `Object.HasStateAuthority && _localInputPoller != null` để không bao giờ bị rớt nút bấm đơn hay lệch góc nhìn trên các máy Client join trong `GameMode.Shared`, dùng `GetInput(out NetworkInputData input)` làm fallback), kiểm tra điều kiện sẵn sàng chiến đấu, khởi tạo bộ đếm hồi chiêu `[Networked] TickTimer`, quét vùng va chạm cận chiến và gọi `Runner.Spawn()` bắn đạn từ Pool (với `EffectiveOwner = Object.InputAuthority != PlayerRef.None ? Object.InputAuthority : Object.StateAuthority`) **chỉ được thực thi bên trong phương thức `FixedUpdateNetwork()` trên máy sở hữu `Object.HasStateAuthority == true`**.
    - Điều kiện tiên quyết để kích hoạt bất kỳ chiêu thức tấn công nào trong Tick hiện tại (`CanExecuteCombatAction()`):
-     - Nhân vật còn sống: `!_healthController.IsDead && _healthController.CurrentHealth > 0` (đọc từ `PlayerHealthController` — Hệ thống `#6`).
-     - Không bị khóa điều khiển bởi giao diện: `InputFocusManager` (`#3`) đang ở trạng thái `CombatActive` (nếu đang mở khung `ChatTyping`, `RebindModalOpen` hoặc đang ở `GhostSpectating`, các cờ nút tấn công trong `NetworkInputData` đã được dập về `0`).
+     - Nhân vật còn sống: `!_healthController.IsDead && _healthController.CurrentHealth > 0` (đọc từ `PlayerHealth` — Hệ thống `#6`).
+     - Không bị khóa điều khiển bởi giao diện: `InputFocusManager` (`#3`) đang ở trạng thái `CombatActive` (nếu đang mở khung `ChatFocused`, `RebindModalOpen` hoặc đang ở `GhostSpectating`, các cờ nút tấn công trong `NetworkInputData` đã được dập về `0`).
      - Không nằm trong cửa sổ khóa giao thoa hành động ngắn (`_actionLockTimer.ExpiredOrNotRunning(Runner)`) để ngăn người chơi kích hoạt cùng lúc 2 đòn đánh trong cùng 1 Tick mạng.
 
 2. **Quy tắc Bộ Đếm Hồi Chiêu Độc Lập Bằng `[Networked] TickTimer` (3 Independent Skill Cooldown Timers):**
-   - `PlayerCombatController` khai báo 3 biến trạng thái mạng `[Networked] public TickTimer` độc lập để đồng bộ thời gian hồi chiêu cho cả logic chiến đấu lẫn giao diện HUD (`#8`):
-     - `[Networked] public TickTimer VerticalSlashCooldownTimer { get; set; }`: Quản lý hồi chiêu của **Nhát Chém Dọc (`Left Click` / `LMB`)** với thời lượng `Config.VerticalSlashCooldown = 0.65s` (`39 ticks` ở `60Hz`).
-     - `[Networked] public TickTimer HorizontalSlashCooldownTimer { get; set; }`: Quản lý hồi chiêu **dùng chung** cho cả **Nhát Chém Ngang Trái $-90^\circ$ (phím `1`)** và **Nhát Chém Ngang Phải $+90^\circ$ (phím `3`)** với thời lượng `Config.HorizontalSlashCooldown = 0.85s` (`51 ticks` ở `60Hz`). Khi người chơi nhấn phím `1` hoặc phím `3`, cả hai nút `1` và `3` trên cụm 7 Button mềm đều bắt đầu quay vòng đếm ngược `0.85s`.
-     - `[Networked] public TickTimer RangedCooldownTimer { get; set; }`: Quản lý hồi chiêu của **Bắn Đạn Tầm Xa (`Right Click` / `RMB`)** với thời lượng `Config.RangedCooldown = 0.55s` (`33 ticks` ở `60Hz`).
-   - Ngoài ra, một bộ đếm ngắn `[Networked] public TickTimer ActionLockTimer { get; set; }` (`0.15s` = `9 ticks`) được kích hoạt mỗi khi tung bất kỳ đòn đánh nào nhằm đảm bảo hoạt ảnh vung kiếm/bắn đạn và phép xoay người $90^\circ$ (`HorizontalTurnDuration = 0.15s`) hoàn tất gọn gàng trước khi nhận lệnh tấn công kế tiếp từ nhóm kỹ năng khác.
+   - `PlayerCombatController` khai báo 3 biến trạng thái mạng `[Networked] public TickTimer` độc lập đọc từ `CharacterCombatConfigSO` (`DefaultCapsuleCombatConfig.asset`) để đồng bộ thời gian hồi chiêu cho cả logic chiến đấu lẫn giao diện HUD (`#8`):
+     - `[Networked] public TickTimer VerticalSlashCooldownTimer { get; set; }`: Quản lý hồi chiêu của **Nhát Chém Dọc (`Left Click` / `LMB`)** với thời lượng `Config.VerticalSlashCooldownSec = 0.60s` (`36 ticks` ở `60Hz`).
+     - `[Networked] public TickTimer HorizontalSweepCooldownTimer { get; set; }`: Quản lý hồi chiêu **dùng chung** cho cả **Nhát Chém Ngang Trái $-90^\circ$ (phím `1`)** và **Nhát Chém Ngang Phải $+90^\circ$ (phím `3`)** với thời lượng `Config.HorizontalSweepCooldownSec = 1.20s` (`72 ticks` ở `60Hz`). Khi người chơi nhấn phím `1` hoặc phím `3`, cả hai nút `1` và `3` trên cụm 7 Button mềm đều bắt đầu quay vòng đếm ngược `1.20s`.
+     - `[Networked] public TickTimer RangedCooldownTimer { get; set; }`: Quản lý hồi chiêu của **Bắn Đạn Tầm Xa (`Right Click` / `RMB`)** với thời lượng `Config.RangedFireCooldownSec = 0.40s` (`24 ticks` ở `60Hz`).
+   - Ngoài ra, cửa sổ xoay và thực thi đòn chém ngang kéo dài đúng `Config.HorizontalSweepTurnDurationSec = 0.18s` (`11 ticks` ở `60Hz`) đảm bảo hình quạt VFX mở rộng và phép xoay thân Capsule $\pm 90^\circ$ hoàn tất đồng thời trước khi nhận lệnh tấn công kế tiếp.
 
 3. **Quy tắc Chiêu 1 — Nhát Chém Dọc (`Vertical Slash` — Mặc định: `Left Click` / `LMB` — `GameActionId.VerticalSlash`):**
-   - **Ý đồ chiến thuật:** Đòn tấn công cận chiến chủ lực ở hướng chính diện, có sát thương đơn đòn cao nhất (`VerticalSlashDamage = 35 HP`) để trừng phạt đối thủ đứng trực diện hoặc vừa bị áp sát bằng `Forward Dash (phím 2)`.
+   - **Ý đồ chiến thuật:** Đòn tấn công cận chiến nhịp nhanh ở hướng chính diện (`VerticalSlashDamage = 25 HP`, `4 hits` hạ gục `100 HP`, hồi chiêu `0.60s`) để dồn sát thương trực diện hoặc kết hợp ngay sau `Forward Dash (phím 2)`.
    - **Hình học vùng sát thương:**
      - Tâm xuất phát (`attack_origin`): Vị trí ngang ngực nhân vật tấn công `transform.position + Vector3.up * 1.0f`.
-     - Bán kính quét: `Config.MeleeRange = 2.80m`.
+     - Bán kính quét: `Config.VerticalSlashRange = 2.50m`.
      - Trục tâm hình quạt (`sector_axis`): Vector hướng thẳng ra phía trước mặt nhân vật chiếu trên mặt phẳng ngang `XZ` (`forward_xz = Vector3.ProjectOnPlane(transform.forward, Vector3.up).normalized`).
-     - Góc mở hình quạt: `Config.VerticalSlashAngle = 45.0°` (tức $\pm 22.5^\circ$ tính từ `forward_xz`). Sử dụng hằng số tiền tính toán `Config.CosHalfVerticalAngle = cos(22.5°) ≈ 0.92388` để kiểm tra tích vô hướng mà không gọi hàm lượng giác tại Runtime.
+     - Góc mở hình quạt: `Config.VerticalSlashAngleDeg = 50.0°` (tức $\pm 25.0^\circ$ tính từ `forward_xz`). Sử dụng hằng số tiền tính toán `Config.VerticalSlashCosHalfAngle = cos(25.0°) ≈ 0.9063078` để kiểm tra tích vô hướng mà không gọi hàm lượng giác tại Runtime.
    - **Quy trình xử lý trong `FixedUpdateNetwork()`:**
-     1. Kiểm tra `input.IsPressed(GameActionId.VerticalSlash)` và `VerticalSlashCooldownTimer.ExpiredOrNotRunning(Runner)` và `ActionLockTimer.ExpiredOrNotRunning(Runner)`.
-     2. Khởi tạo `VerticalSlashCooldownTimer = TickTimer.CreateFromSeconds(Runner, Config.VerticalSlashCooldown)` (`0.65s` / `39 ticks`) và `ActionLockTimer = TickTimer.CreateFromSeconds(Runner, 0.15f)` (`9 ticks`).
-     3. Phát lệnh đồng bộ hiệu ứng `[Rpc(RpcSources.StateAuthority, RpcTargets.All)] Rpc_PlayAttackEffect(CombatAttackType.VerticalSlash, attack_origin, transform.rotation)` tới Hệ thống `#14`.
-     4. Gọi hàm quét cận chiến bù trễ `ExecuteMeleeSectorScan(attack_origin, forward_xz, Config.MeleeRange, Config.CosHalfVerticalAngle, Config.VerticalSlashDamage, CombatAttackType.VerticalSlash)`.
+     1. Kiểm tra nút `VerticalSlash` và `VerticalSlashCooldownTimer.ExpiredOrNotRunning(Runner)`.
+     2. Khởi tạo `VerticalSlashCooldownTimer = TickTimer.CreateFromSeconds(Runner, Config.VerticalSlashCooldownSec)` (`0.60s` / `36 ticks`).
+     3. Phát lệnh đồng bộ hiệu ứng `[Rpc(RpcSources.StateAuthority, RpcTargets.All)]` tới Hệ thống `#14`.
+     4. Gọi hàm quét cận chiến `ExecuteMeleeSectorScan` với `VerticalSlashRange = 2.50m`, `VerticalSlashCosHalfAngle`, `VerticalSlashDamage = 25`.
 
-4. **Quy tắc Chiêu 2 — Nhát Chém Ngang Xoay Người $90^\circ$ (`Horizontal Turning Slash` — Mặc định: Phím `1` Chém Trái $-90^\circ$ / Phím `3` Chém Phải $+90^\circ$):**
-   - **Ý đồ chiến thuật:** Đòn đánh quét góc rộng chuyên trị các mục tiêu đang lăn né sang hông (`Side Dodge Roll Q/E`) hoặc phục kích quanh góc vuông chữ L (`L-Corner Obstacle`), đồng thời tự động xoay góc nhìn nhân vật và Camera đúng $\pm 90^\circ$ sang hướng vừa chém.
-   - **Toán học hình quạt lệch trục phân giác $\pm 45^\circ$ (`Bisector-Shifted $90^\circ$ Sector Math`):**
-     - Khác với nhát chém dọc (đối xứng $\pm 22.5^\circ$ quanh hướng nhìn thẳng), **Nhát Chém Ngang Xoay Người $90^\circ$** quét lưỡi kiếm bắt đầu từ hướng nhìn thẳng ban đầu (`0°`) mở rộng vuông góc sang bên trái (`-90°` khi nhấn phím `1`, `turn_direction_sign = -1`) hoặc sang bên phải (`+90°` khi nhấn phím `3`, `turn_direction_sign = +1`).
-     - Do cung quét trải dài từ `0°` đến `±90°` (tổng độ rộng góc quạt `Config.HorizontalSlashAngle = 90.0°`), **trục phân giác tâm của hình quạt (`sector_bisector_axis`)** nằm chính xác ở góc **$-45.0^\circ$ (cho phím `1`)** hoặc **$+45.0^\circ$ (cho phím `3`)** so với vector hướng mặt ban đầu `initial_forward_xz` tại thời điểm bắt đầu vung kiếm:
-       $$\vec{B}_{\text{horizontal}} = \text{ Quaternion.Euler}(0, \text{turn\_direction\_sign} \times 45.0^\circ, 0) \times \vec{F}_{\text{initial\_xz}}$$
-     - Với trục phân giác $\vec{B}_{\text{horizontal}}$ này, mọi mục tiêu có góc lệch trong khoảng $\pm 45.0^\circ$ quanh $\vec{B}_{\text{horizontal}}$ đều nằm chính xác trong cung $[0^\circ, -90^\circ]$ (phím `1`) hoặc $[0^\circ, +90^\circ]$ (phím `3`). Phép kiểm tra chỉ cần so sánh:
-       $$\text{Vector3.Dot}(\vec{B}_{\text{horizontal}}, \vec{D}_{\text{to\_target\_xz}}) \ge \text{Config.CosHalfHorizontalAngle} \quad (\cos 45^\circ \approx 0.7071068)$$
-   - **Cơ chế Ủy Quyền Xoay Mượt Nhân Vật & Camera $\pm 90^\circ$ (`MovementController.RequestTimedYawTurn`):**
-     - Ngay trong cùng Tick mạng kích hoạt nhát chém ngang phím `1` hoặc `3` (sau khi đã lấy `initial_forward_xz` để quét hitbox), `PlayerCombatController` gọi phương thức một chiều sang Hệ thống `#5`:
-       `_movementController.RequestTimedYawTurn(turnDirectionSign);` (`-1` cho phím `1`, `+1` cho phím `3`).
-     - Hệ thống `#5` sẽ nội suy xoay `NetworkTransform` của nhân vật với tốc độ `±10.0°/tick` trong suốt `Config.HorizontalTurnDuration = 0.15s` (`9 ticks` ở `60Hz`). Vì điểm neo Camera (`CameraTarget_FPS` / `CameraTarget_TPS` của Hệ thống `#9`) là nhánh con gắn chặt theo góc Yaw của nhân vật, **cả thân hình Capsule lẫn góc nhìn Camera (`FPS` hoặc `TPS`) đều xoay mượt đúng $-90.0^\circ$ (phím `1`) hoặc $+90.0^\circ$ (phím `3`)** mà không xảy ra bất kỳ xung đột ghi đè `transform.rotation` nào giữa `#7`, `#5` và `#9`.
+4. **Quy tắc Chiêu 2 — Nhát Chém Ngang Quạt & Xoay Đồng Bộ 1:1 $90^\circ$ (`Synchronized Horizontal Sweep` — Mặc định: Phím `1` Chém Trái $-90^\circ$ / Phím `3` Chém Phải $+90^\circ$):**
+   - **Ý đồ chiến thuật:** Đòn đánh quét góc vuông uy lực cao (`HorizontalSweepDamage = 30 HP`, tầm quét rộng `HorizontalSweepRange = 3.00m`, hồi chiêu chung `1.20s`) chuyên trị các mục tiêu đang lăn né sang hông (`Side Dodge Roll Q/E`) hoặc phục kích quanh góc vuông chữ L (`L-Corner Obstacle`).
+   - **Đồng Bộ Tuyệt Đối 1:1 Giữa Tốc Độ Mở Hình Quạt Và Tốc Độ Xoay Thân Capsule (`1:1 Real-Time Sweep Arc & Capsule Rotation Sync`):**
+     - Khi nhấn phím `1` (`directionSign = -1`, quét sang trái `-90°`) hoặc phím `3` (`directionSign = +1`, quét sang phải `+90°`), quá trình mở hình quạt năng lượng và quá trình xoay phần thân Capsule + góc nhìn Camera **diễn ra đồng thời với cùng một tiến độ chuẩn hóa `u = VisualSweepProgress ∈ [0.0, 1.0]`** trong suốt `Config.HorizontalSweepTurnDurationSec = 0.18s` (`11 ticks` ở `60Hz`), nội suy mượt theo đường cong `SmoothStep(u) = u²(3 - 2u)`:
+       1. **Hình quạt VFX mở dần từ `0°` đến `±90°` theo thời gian thực:** Thay vì hiện sẵn cả mảng quạt `90°` ngay ở khung hình đầu tiên, lưới hình quạt phẳng (`CombatVfxManager` / `SweepVisualSyncProgress`) neo mép khởi điểm tại góc hướng mặt ban đầu `SweepStartYaw` và mở rộng góc quét động $\Delta\theta(u) = \text{directionSign} \times 90^\circ \times \text{SmoothStep}(u)$ theo từng khung hình.
+       2. **Phần thân Capsule & Camera xoay cùng tốc độ với lưỡi quạt:** Tại mọi thời điểm $t \in [0, 0.18\text{s}]$, góc hướng mặt của thân nhân vật Capsule và `CameraYaw` luôn bám sát chính mép lưỡi đao đang quét ra:
+          $$\text{CapsuleYaw}(u) = \text{SweepStartYaw} + \text{directionSign} \times 90^\circ \times \text{SmoothStep}(u)$$
+       3. **Hoàn tất đồng thời (`Fan Full == Turn Complete`):** Đúng khoảnh khắc hình quạt vừa quạt đủ góc vuông `90°` (`u = 1.0` tại `0.18s` / tick thứ `11`) cũng chính là khoảnh khắc phần thân Capsule và Camera vừa xoay xong trọn vẹn `-90°` (phím `1`) hoặc `+90°` (phím `3`).
+       4. **Quét va chạm tích lũy theo lưỡi kiếm & Tự động mở khóa góc xoay chuột (`Self-Healing Yaw Unlock`):** Trong suốt `11 ticks` quét, vùng va chạm kiểm tra bao phủ toàn bộ cung `[0°, ±90°]` (trục phân giác lệch $\pm 45.0^\circ$ so với `SweepStartYaw`, `HorizontalSweepCosHalfAngle = cos(45°) ≈ 0.7071068`, bán kính `3.00m`, mỗi mục tiêu tối đa nhận sát thương `1 lần/nhát chém` thông qua bộ lọc khử trùng lặp). Trong `0.18s` đang xoay, `_localInputPoller.SetHorizontalYawLock(true, ...)` và `_mobilityController.SetSweepYawOverride(true)` khóa tạm thời chuột ngang để quỹ đạo xoay mượt tuyệt đối, sau đó **tự động mở khóa ngay khi hết `11 ticks` (kèm chốt bảo vệ tự phục hồi `EnsureYawLocksReleasedIfIdle()` nếu nhân vật tử trận giữa chừng hoặc reset ván đấu)** để chuột ngang không bao giờ bị kẹt.
 
 5. **Quy tắc Quét Bù Trễ Cận Chiến, Chống Trừ Máu Kép & Chống Chém Xuyên Tường (`Lag-Compensated Melee Scan & Line-of-Sight Rule`):**
    - Cả **Vertical Slash (`Left Click`)** và **Horizontal Turning Slash (`1`/`3`)** đều dùng chung thuật toán kiểm tra va chạm 4 bước Zero-Allocation trong `ExecuteMeleeSectorScan(...)`:
@@ -121,17 +118,17 @@ Khi bước vào *Capsule Arena: Last Man Standing*, người chơi hóa thân t
 
 7. **Bảng Tổng Hợp Thông Số 3 Chiêu Thức Tấn Công (Đọc 100% Từ `CharacterCombatConfigSO` `#1`):**
 
-| Thuộc Tính Kỹ Thuật | Chiêu 1: Nhát Chém Dọc (`Vertical Slash`) | Chiêu 2: Nhát Chém Ngang Xoay $90^\circ$ (`Horizontal Turning Slash`) | Chiêu 3: Bắn Đạn Tầm Xa (`Pooled Ranged Attack`) |
+| Thuộc Tính Kỹ Thuật | Chiêu 1: Nhát Chém Dọc (`Vertical Slash`) | Chiêu 2: Nhát Chém Ngang Đồng Bộ 1:1 $90^\circ$ (`Horizontal Sweep`) | Chiêu 3: Bắn Đạn Tầm Xa (`Pooled Ranged Fire`) |
 | :--- | :--- | :--- | :--- |
 | **Phím Mặc Định & Mobile Button** | `Left Click` (`LMB`) / Button Mềm `LMB` | Phím `1` (Trái $-90^\circ$) & Phím `3` (Phải $+90^\circ$) / Button Mềm `1` & `3` | `Right Click` (`RMB`) / Button Mềm `RMB` |
-| **Mã Hành Động (`GameActionId`)** | `GameActionId.VerticalSlash` | `GameActionId.HorizontalSlashLeft` (`1`) / `HorizontalSlashRight` (`3`) | `GameActionId.RangedAttack` |
-| **Mã Cooldown (`CombatSkillId`)** | `CombatSkillId.VerticalSlash` | `CombatSkillId.HorizontalSlash` *(dùng chung cho `1` & `3`)* | `CombatSkillId.RangedAttack` |
-| **Sát Thương Mỗi Đòn (`Damage`)** | `VerticalSlashDamage = 35 HP` | `HorizontalSlashDamage = 25 HP` | `RangedDamage = 20 HP` |
-| **Số Đòn Hạ Gục (`100 HP`)** | `3 hits` (`105 tổng sát thương`) | `4 hits` (`100 tổng sát thương`) | `5 hits` (`100 tổng sát thương`) |
-| **Tầm Tác Dụng / Cự Ly Tối Đa** | `MeleeRange = 2.80 m` | `MeleeRange = 2.80 m` | `ProjectileMaxDistance = 26.0 m` (`Speed = 22.0 m/s`) |
-| **Hình Học Vùng Quét / Hitbox** | Hình quạt dọc trước mặt `45.0°` ($\pm 22.5^\circ$ quanh `forward`, `CosHalf = 0.9239`) | Hình quạt ngang góc vuông `90.0°` từ `0°` sang `-90°` (`1`) hoặc `+90°` (`3`) quanh trục phân giác $\pm 45^\circ$ (`CosHalf = 0.7071`) | Hình cầu bay tuyến tính `ProjectileRadius = 0.20 m` (đường kính `0.40 m`, `Lifetime = 1.1818s` / `71 ticks`) |
-| **Tác Động Lên Góc Nhìn / Thân Người** | Giữ nguyên hướng nhìn hiện tại | Gọi `RequestTimedYawTurn(±1)` xoay mượt Nhân vật + Camera $\pm 90^\circ$ trong `0.15s` (`9 ticks`, `±10°/tick`) | Giữ nguyên hướng nhìn hiện tại; hỗ trợ ngắm chuẩn qua Crosshair `FPS` |
-| **Thời Gian Hồi Chiêu (`Cooldown`)** | `VerticalSlashCooldown = 0.65 s` (`39 ticks`) | `HorizontalSlashCooldown = 0.85 s` (`51 ticks`) | `RangedCooldown = 0.55 s` (`33 ticks`) |
+| **Mã Hành Động (`GameActionId`)** | `GameActionId.VerticalSlash` | `GameActionId.HorizontalSweepLeft` (`1`) / `HorizontalSweepRight` (`3`) | `GameActionId.RangedFire` |
+| **Mã Cooldown (`CombatSkillId`)** | `CombatSkillId.VerticalSlash` | `CombatSkillId.HorizontalSweep` *(dùng chung cho `1` & `3`)* | `CombatSkillId.RangedFire` |
+| **Sát Thương Mỗi Đòn (`Damage`)** | `VerticalSlashDamage = 25 HP` | `HorizontalSweepDamage = 30 HP` | `RangedDamage = 15 HP` |
+| **Số Đòn Hạ Gục (`100 HP`)** | `4 hits` (`100 tổng sát thương`) | `4 hits` (`120 tổng sát thương`) | `7 hits` (`105 tổng sát thương`) |
+| **Tầm Tác Dụng / Cự Ly Tối Đa** | `VerticalSlashRange = 2.50 m` | `HorizontalSweepRange = 3.00 m` | `RangedMaxDistance = 30.0 m` (`Speed = 15.0 m/s`) |
+| **Hình Học Vùng Quét / Hitbox** | Hình quạt dọc trước mặt `50.0°` ($\pm 25.0^\circ$ quanh `forward`, `CosHalf = 0.9063`) | Hình quạt ngang `90.0°` mở dần từ `0°` đến `-90°` (`1`) hoặc `+90°` (`3`) quanh trục phân giác $\pm 45^\circ$ (`CosHalf = 0.7071`) | Hình cầu bay tuyến tính `RangedProjectileRadius = 0.20 m` (`Lifetime = 2.00s` / `120 ticks`) |
+| **Tác Động Lên Góc Nhìn / Thân Người** | Giữ nguyên hướng nhìn hiện tại | Quạt VFX mở rộng tới đâu thân Capsule & Camera xoay đồng bộ 1:1 tới đó theo `SmoothStep` trong `0.18s` (`11 ticks`), quạt đủ `90°` cũng là lúc xoay xong `±90°` | Giữ nguyên hướng nhìn hiện tại; hỗ trợ ngắm chuẩn qua Crosshair `FPS` |
+| **Thời Gian Hồi Chiêu (`Cooldown`)** | `VerticalSlashCooldownSec = 0.60 s` (`36 ticks`) | `HorizontalSweepCooldownSec = 1.20 s` (`72 ticks`) | `RangedFireCooldownSec = 0.40 s` (`24 ticks`) |
 
 ### States and Transitions
 
@@ -416,10 +413,10 @@ Toàn bộ các núm tinh chỉnh của Hệ thống `#7` được nối dây tr
    - **WHEN** người chơi nhấn **phím `1` (`HorizontalSlashLeft`)** cho mục tiêu ở `-70.0°` (hoặc **phím `3` (`HorizontalSlashRight`)** cho mục tiêu ở `+70.0°`)
    - **THEN** hệ thống tính trục phân giác lệch `-45.0°` (phím `1`) hoặc `+45.0°` (phím `3`) so với `initial_forward_xz`, xác nhận `dot(sector_bisector_axis, dir_to_target_xz) = cos(25.0°) ≈ 0.9063 >= CosHalfHorizontalAngle (0.7071)`, gửi đúng 1 lệnh `Rpc_TakeDamage` với sát thương `HorizontalSlashDamage = 25 HP` (`4 hits` hạ gục `100 HP`), và khởi tạo bộ đếm dùng chung `HorizontalSlashCooldownTimer = 0.85s` (`51 ticks`).
 
-3. **AC-03 (Đồng bộ xoay mượt Nhân vật & Camera đúng $\pm 90^\circ$ trong `0.15s` khi nhấn Phím `1` hoặc Phím `3`):**
+3. **AC-03 (Đồng bộ 1:1 tốc độ mở hình quạt VFX và tốc độ xoay thân Capsule + Camera đúng $\pm 90^\circ$ trong `0.18s` khi nhấn Phím `1` hoặc Phím `3`):**
    - **GIVEN** nhân vật đang ở góc Yaw ban đầu $\theta_0 = 0.0^\circ$ dưới góc nhìn **TPS** hoặc **FPS**
    - **WHEN** người chơi kích hoạt **Nhát Chém Ngang Trái (phím `1`)** hoặc **Nhát Chém Ngang Phải (phím `3`)**
-   - **THEN** `PlayerCombatController` gọi `_movementController.RequestTimedYawTurn(-1)` (phím `1`) hoặc `RequestTimedYawTurn(+1)` (phím `3`), làm cả `NetworkTransform` của nhân vật lẫn góc nhìn Camera xoay đều đặn `±10.0°/tick` trong đúng `9 ticks` (`HorizontalTurnDuration = 0.15s` ở `60Hz`), kết thúc ở góc Yaw chính xác `-90.0°` hoặc `+90.0°` ($\pm 0.1^\circ$) mà không xảy ra hiện tượng giật khung hình hay xung đột ghi đè `transform.rotation`.
+   - **THEN** suốt `11 ticks` (`HorizontalSweepTurnDurationSec = 0.18s` ở `60Hz`), hình quạt năng lượng mở dần từ `0°` tới `-90°` (phím `1`) hoặc `+90°` (phím `3`) theo đúng tiến độ `VisualSweepProgress`, phần thân Capsule và góc nhìn Camera xoay cùng tốc độ với mép quạt theo đường cong `SmoothStep`, hoàn tất đủ hình quạt `90°` và góc xoay `±90.0°` tại cùng một thời điểm, đồng thời tự động mở khóa xoay chuột ngang ngay khi kết thúc (hoặc khi nhân vật tử trận giữa chừng).
 
 4. **AC-04 (Chống chém xuyên tường `Obstacle | Boundary` bằng `Physics.Linecast`):**
    - **GIVEN** mục tiêu đối phương đứng cách người tấn công `2.00m` (`<= 2.80m`) và nằm ngay chính diện (`0°`), nhưng ở giữa hai nhân vật có một khối `Obstacle` (Layer 8) hoặc tường `Boundary` (Layer 9)
