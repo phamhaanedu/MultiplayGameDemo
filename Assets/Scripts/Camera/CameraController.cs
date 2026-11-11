@@ -363,9 +363,9 @@ namespace CapsuleArena.CameraSystem
 
         private float ResolveEffectiveYaw()
         {
-            if (_combatController != null && _combatController.IsPerformingHorizontalSweepTurn)
+            if (_combatController != null && _combatController.HasActiveSweepYawOverride)
             {
-                return _combatController.CurrentAuthoritativeYaw;
+                return _combatController.EffectiveSweepYaw;
             }
 
             return _inputPoller != null ? _inputPoller.CurrentYaw : transform.eulerAngles.y;

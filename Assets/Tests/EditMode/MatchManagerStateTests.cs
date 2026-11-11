@@ -83,27 +83,37 @@ namespace CapsuleArena.Tests.EditMode
                 Assert.AreEqual(0, p1Combat.StandaloneSpawnedProjectileCount, "Combat attacks must be rejected during WaitingForPlayers.");
                 Assert.AreEqual(100, p2Hp.CurrentHP, "PlayerHealth damage must be rejected during WaitingForPlayers.");
 
-                // 2nd player joins -> enters 180-tick Countdown:
+                // 2nd player joins -> enters 300-tick (5.0s) Countdown:
+                Assert.AreEqual(5.0f, MatchManager.CountdownDurationSeconds, 0.001f);
+                Assert.AreEqual(300, MatchManager.CountdownDurationTicks);
                 _matchManager.RegisterOrUpdateStandalonePlayer(p2, "Bravo", isAlive: true);
                 _matchManager.SimulateStandaloneTicks(1);
                 Assert.AreEqual(MatchState.Countdown, _matchManager.CurrentMatchState);
 
-                // Tick 179 of Countdown -> STILL Countdown & combat STILL rejected; Tick 180 -> transitions to Playing!
+                // Tick 299 of Countdown -> STILL Countdown & combat STILL rejected; Tick 300 -> transitions to Playing!
                 _matchManager.SimulateStandaloneTicks(MatchManager.CountdownDurationTicks - 1);
-                Assert.AreEqual(MatchState.Countdown, _matchManager.CurrentMatchState, "Tick 179 must still be in Countdown.");
+                Assert.AreEqual(MatchState.Countdown, _matchManager.CurrentMatchState, "Tick 299 must still be in Countdown.");
                 p2Hp.RequestDamageFromAttacker(p1, 25, AttackType.VerticalSlash, Vector3.zero, attackTick: 2);
-                Assert.AreEqual(100, p2Hp.CurrentHP, "Damage at Tick 179 of Countdown must still be rejected.");
+                Assert.AreEqual(100, p2Hp.CurrentHP, "Damage at Tick 299 of Countdown must still be rejected.");
 
                 _matchManager.SimulateStandaloneTicks(1);
-                Assert.AreEqual(MatchState.Playing, _matchManager.CurrentMatchState, "Tick 180 must transition to Playing.");
+                Assert.AreEqual(MatchState.Playing, _matchManager.CurrentMatchState, "Tick 300 (5.0s) must transition to Playing.");
 
                 // During Playing -> damage and attacks ARE accepted!
                 p2Hp.RequestDamageFromAttacker(p1, 25, AttackType.VerticalSlash, Vector3.zero, attackTick: 3);
                 Assert.AreEqual(75, p2Hp.CurrentHP, "Damage must apply once MatchState == Playing.");
 
-                // Late-joiner during Playing joins as dead Ghost:
-                _matchManager.RegisterOrUpdateStandalonePlayer(PlayerRef.FromEncoded(3), "LateGhost", isAlive: true);
-                Assert.AreEqual(2, _matchManager.CountLivingPlayers());
+                // 3rd player joining within the opening 60.0s (3,600 ticks) of Playing joins ALIVE as an active combatant:
+                _matchManager.SimulateStandaloneTicks(MatchManager.DefaultLateJoinActiveWindowTicks);
+                Assert.IsTrue(_matchManager.CanJoinCurrentMatchAlive(), "Exact 60.0s (3,600 ticks) boundary must still allow live combat join.");
+                _matchManager.RegisterOrUpdateStandalonePlayer(PlayerRef.FromEncoded(3), "ActiveJoiner3", isAlive: true);
+                Assert.AreEqual(3, _matchManager.CountLivingPlayers(), "Player 3 joining within <= 60s must join alive.");
+
+                // Strictly after 60.0s (Tick 3,601+) -> 4th player joins in Ghost Spectator mode (IsAlive == false):
+                _matchManager.SimulateStandaloneTicks(1);
+                Assert.IsFalse(_matchManager.CanJoinCurrentMatchAlive(), "Tick 3,601 (> 60.0s) must switch late-joiners to Ghost Spectator.");
+                _matchManager.RegisterOrUpdateStandalonePlayer(PlayerRef.FromEncoded(4), "LateGhost4", isAlive: true);
+                Assert.AreEqual(3, _matchManager.CountLivingPlayers(), "Player 4 joining after > 60s must enter Ghost Spectator (IsAlive == false).");
             }
             finally
             {
@@ -189,8 +199,13 @@ namespace CapsuleArena.Tests.EditMode
                 Assert.IsNotNull(netObj, "MatchSystems must have a Fusion NetworkObject.");
                 Assert.IsTrue((netObj.Flags & NetworkObjectFlags.AllowStateAuthorityOverride) != 0,
                     "MatchSystems NetworkObject must enable AllowStateAuthorityOverride.");
+                Assert.IsTrue((netObj.Flags & NetworkObjectFlags.MasterClientObject) != 0,
+                    "MatchSystems NetworkObject must enable MasterClientObject for Shared Mode authority.");
                 Assert.IsTrue((netObj.Flags & NetworkObjectFlags.DestroyWhenStateAuthorityLeaves) == 0,
                     "MatchSystems NetworkObject must disable DestroyWhenStateAuthorityLeaves.");
+                Assert.IsNotNull(sceneMm.ActiveRulesConfig, "Arena.unity MatchManager must wire DefaultMatchRulesConfig.asset.");
+                Assert.AreEqual(5.0f, sceneMm.ActiveRulesConfig.CountdownDurationSeconds, 0.001f);
+                Assert.AreEqual(60.0f, sceneMm.ActiveRulesConfig.LateJoinActiveWindowSeconds, 0.001f);
             }
             finally
             {
@@ -248,6 +263,71 @@ namespace CapsuleArena.Tests.EditMode
             _matchManager.ReconcileRosterOnFailover(new[] { p5New }, p3);
             Assert.AreEqual(MatchState.WaitingForPlayers, _matchManager.CurrentMatchState,
                 "Failover leaving < 2 players during Countdown must abort cleanly to WaitingForPlayers.");
+        }
+
+        [Test]
+        public void MatchRulesConfigSO_CustomCountdownLateJoinWindowAndLateJoinGhostAvatar_Verified()
+        {
+            MatchRulesConfigSO customRules = ScriptableObject.CreateInstance<MatchRulesConfigSO>();
+            CharacterCombatConfigSO combatCfg = ScriptableObject.CreateInstance<CharacterCombatConfigSO>();
+            GameObject ghostGo = new GameObject("LateJoinGhost_Test");
+            try
+            {
+                customRules.ConfigureForTest(countdownSeconds: 7.0f, playingSeconds: 180.0f, lateJoinActiveWindowSeconds: 45.0f);
+                Assert.AreEqual(420, customRules.CountdownDurationTicks);
+                Assert.AreEqual(2700, customRules.LateJoinActiveWindowTicks);
+
+                _matchManager.SetMatchRulesConfig(customRules);
+                PlayerRef p1 = PlayerRef.FromEncoded(1);
+                PlayerRef p2 = PlayerRef.FromEncoded(2);
+                PlayerRef p3 = PlayerRef.FromEncoded(3);
+                PlayerRef p4 = PlayerRef.FromEncoded(4);
+
+                _matchManager.RegisterOrUpdateStandalonePlayer(p1, "Host", isAlive: true);
+                _matchManager.RegisterOrUpdateStandalonePlayer(p2, "Peer2", isAlive: true);
+                _matchManager.SimulateStandaloneTicks(1);
+                Assert.AreEqual(MatchState.Countdown, _matchManager.CurrentMatchState);
+
+                // Custom 7.0s (420 ticks) countdown:
+                _matchManager.SimulateStandaloneTicks(419);
+                Assert.AreEqual(MatchState.Countdown, _matchManager.CurrentMatchState);
+                _matchManager.SimulateStandaloneTicks(1);
+                Assert.AreEqual(MatchState.Playing, _matchManager.CurrentMatchState);
+
+                // Custom 45.0s (2,700 ticks) late-join window:
+                _matchManager.SimulateStandaloneTicks(2700);
+                _matchManager.RegisterOrUpdateStandalonePlayer(p3, "JoinAt45s", isAlive: true);
+                Assert.IsTrue(_matchManager.TryGetPlayerStats(p3, out PlayerMatchStats s3) && s3.IsAlive);
+
+                _matchManager.SimulateStandaloneTicks(1);
+                _matchManager.RegisterOrUpdateStandalonePlayer(p4, "JoinAfter45s", isAlive: true);
+                Assert.IsTrue(_matchManager.TryGetPlayerStats(p4, out PlayerMatchStats s4) && !s4.IsAlive);
+
+                // Verify EnterLateJoinGhostSpectator transitions to Layer 10 Ghost without firing burst VFX or kill feed:
+                PlayerDeathStateController deathCtrl = ghostGo.AddComponent<PlayerDeathStateController>();
+                deathCtrl.ConfigureReferences(Array.Empty<Renderer>(), null, null, null, null, null, "Spectator4");
+                PlayerHealth ghostHp = ghostGo.AddComponent<PlayerHealth>();
+                ghostHp.ConfigureForStandaloneTest(combatCfg, p4, deathController: deathCtrl);
+
+                int burstEffectsCount = 0;
+                int killFeedCount = 0;
+                deathCtrl.OnEliminationEffectsRequested += _ => burstEffectsCount++;
+                PlayerHealth.OnAnyKillConfirmedBroadcast += (_, _) => killFeedCount++;
+
+                ghostHp.EnterLateJoinGhostSpectator();
+                Assert.IsTrue(ghostHp.IsDead);
+                Assert.AreEqual(0, ghostHp.CurrentHP);
+                Assert.AreEqual(ArenaLayers.GhostSpectator, ghostGo.layer);
+                Assert.AreEqual("Spectator4 [GHOST]", deathCtrl.CurrentFormattedNameplate);
+                Assert.AreEqual(0, burstEffectsCount, "Late-join Ghost transition must not trigger combat death explosion VFX/SFX.");
+                Assert.AreEqual(0, killFeedCount, "Late-join Ghost transition must not emit a fake kill confirmation.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(ghostGo);
+                UnityEngine.Object.DestroyImmediate(combatCfg);
+                UnityEngine.Object.DestroyImmediate(customRules);
+            }
         }
     }
 }

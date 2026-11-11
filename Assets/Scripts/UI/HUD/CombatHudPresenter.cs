@@ -130,7 +130,36 @@ namespace CapsuleArena.UI.HUD
         private void Awake()
         {
             EnsureHudHierarchyBuilt();
+            ResetInitialHudPresentation();
             WireModalButtons();
+        }
+
+        private void ResetInitialHudPresentation()
+        {
+            if (_spectatorBannerText != null)
+            {
+                _spectatorBannerText.text = string.Empty;
+                _spectatorBannerText.gameObject.SetActive(false);
+            }
+
+            if (_matchEndModalGroup != null)
+            {
+                _matchEndModalGroup.alpha = 0f;
+                _matchEndModalGroup.interactable = false;
+                _matchEndModalGroup.blocksRaycasts = false;
+            }
+
+            if (_lowHpVignetteGroup != null)
+            {
+                _lowHpVignetteGroup.alpha = 0f;
+            }
+
+            if (_hitMarkerImage != null)
+            {
+                _hitMarkerImage.enabled = false;
+            }
+
+            _killFeedPool?.ClearAllEntries();
         }
 
         private void OnEnable()

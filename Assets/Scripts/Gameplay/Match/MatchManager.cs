@@ -22,11 +22,11 @@ namespace CapsuleArena.Gameplay.Match
         /// <summary>Maximum players supported per Shared Mode room (4).</summary>
         public const int MaxPlayersPerMatch = 4;
 
-        /// <summary>Countdown phase duration in seconds (3.0s = 180 ticks @ 60Hz).</summary>
-        public const float CountdownDurationSeconds = 3.0f;
+        /// <summary>Countdown phase duration in seconds (5.0s = 300 ticks @ 60Hz).</summary>
+        public const float CountdownDurationSeconds = 5.0f;
 
-        /// <summary>Countdown phase duration in 60Hz ticks (180).</summary>
-        public const int CountdownDurationTicks = 180;
+        /// <summary>Countdown phase duration in 60Hz ticks (300).</summary>
+        public const int CountdownDurationTicks = 300;
 
         /// <summary>Active combat phase duration in seconds (180.0s = 10,800 ticks @ 60Hz).</summary>
         public const float PlayingDurationSeconds = 180.0f;
@@ -34,11 +34,21 @@ namespace CapsuleArena.Gameplay.Match
         /// <summary>Active combat phase duration in 60Hz ticks (10,800).</summary>
         public const int PlayingDurationTicks = 10800;
 
+        /// <summary>Default opening window of Playing in seconds allowing 3rd/4th players to join alive (60.0s = 3,600 ticks @ 60Hz).</summary>
+        public const float DefaultLateJoinActiveWindowSeconds = 60.0f;
+
+        /// <summary>Default opening window of Playing in 60Hz ticks allowing 3rd/4th players to join alive (3,600).</summary>
+        public const int DefaultLateJoinActiveWindowTicks = 3600;
+
         /// <summary>Post-match summary phase duration in seconds (8.0s = 480 ticks @ 60Hz).</summary>
         public const float EndedDurationSeconds = 8.0f;
 
         /// <summary>Post-match summary phase duration in 60Hz ticks (480).</summary>
         public const int EndedDurationTicks = 480;
+
+        [Header("Match Rules Configuration")]
+        [Tooltip("Designer-editable ScriptableObject defining countdown duration (default 5s) and late-join active combatant window (default 60s).")]
+        [SerializeField] private MatchRulesConfigSO _matchRulesConfig;
 
         /// <summary>Gets the replicated current match lifecycle state.</summary>
         [Networked] public MatchState NetworkedMatchState { get; private set; }
@@ -69,6 +79,7 @@ namespace CapsuleArena.Gameplay.Match
 
         private ChangeDetector _changeDetector;
         private IInputFocusService _focusService;
+        private IMatchRulesConfig _runtimeRulesOverride;
         private Func<bool> _cachedCombatAllowedPredicate;
         private MatchState _localState = MatchState.WaitingForPlayers;
         private MatchState _lastPresentationState = MatchState.WaitingForPlayers;
@@ -92,6 +103,39 @@ namespace CapsuleArena.Gameplay.Match
         /// <summary>Raised strictly once per match when entering <see cref="MatchState.Ended"/>.</summary>
         public event Action<MatchResultSummary> OnMatchEnded;
 
+        /// <summary>Gets the active match rules configuration (runtime DI override or serialized <see cref="MatchRulesConfigSO"/>).</summary>
+        public IMatchRulesConfig ActiveRulesConfig => _runtimeRulesOverride ?? _matchRulesConfig;
+
+        /// <summary>Gets the configured minimum connected players required to start countdown (default: 2).</summary>
+        public int ActiveMinPlayersToStart => ActiveRulesConfig != null ? ActiveRulesConfig.MinPlayersToStart : MinPlayersToStart;
+
+        /// <summary>Gets the configured maximum connected players per Shared Mode room (default: 4).</summary>
+        public int ActiveMaxPlayersPerMatch => ActiveRulesConfig != null ? ActiveRulesConfig.MaxPlayersPerMatch : MaxPlayersPerMatch;
+
+        /// <summary>Gets the configured pre-match countdown duration in seconds (default: 5.0s).</summary>
+        public float ActiveCountdownDurationSeconds => ActiveRulesConfig != null ? ActiveRulesConfig.CountdownDurationSeconds : CountdownDurationSeconds;
+
+        /// <summary>Gets the configured pre-match countdown duration in 60Hz ticks (default: 300 = 5.0s).</summary>
+        public int ActiveCountdownDurationTicks => ActiveRulesConfig != null ? ActiveRulesConfig.CountdownDurationTicks : CountdownDurationTicks;
+
+        /// <summary>Gets the configured active combat round duration in seconds (default: 180.0s).</summary>
+        public float ActivePlayingDurationSeconds => ActiveRulesConfig != null ? ActiveRulesConfig.PlayingDurationSeconds : PlayingDurationSeconds;
+
+        /// <summary>Gets the configured active combat round duration in 60Hz ticks (default: 10,800 = 180.0s).</summary>
+        public int ActivePlayingDurationTicks => ActiveRulesConfig != null ? ActiveRulesConfig.PlayingDurationTicks : PlayingDurationTicks;
+
+        /// <summary>Gets the configured late-join active combatant window in seconds (default: 60.0s).</summary>
+        public float ActiveLateJoinWindowSeconds => ActiveRulesConfig != null ? ActiveRulesConfig.LateJoinActiveWindowSeconds : DefaultLateJoinActiveWindowSeconds;
+
+        /// <summary>Gets the configured late-join active combatant window in 60Hz ticks (default: 3,600 = 60.0s).</summary>
+        public int ActiveLateJoinWindowTicks => ActiveRulesConfig != null ? ActiveRulesConfig.LateJoinActiveWindowTicks : DefaultLateJoinActiveWindowTicks;
+
+        /// <summary>Gets the configured post-match summary duration in seconds (default: 8.0s).</summary>
+        public float ActiveEndedDurationSeconds => ActiveRulesConfig != null ? ActiveRulesConfig.EndedDurationSeconds : EndedDurationSeconds;
+
+        /// <summary>Gets the configured post-match summary duration in 60Hz ticks (default: 480 = 8.0s).</summary>
+        public int ActiveEndedDurationTicks => ActiveRulesConfig != null ? ActiveRulesConfig.EndedDurationTicks : EndedDurationTicks;
+
         /// <summary>Gets the active match state across networked or standalone test execution.</summary>
         public MatchState CurrentMatchState => IsSpawnedOnRunner ? NetworkedMatchState : _localState;
 
@@ -105,6 +149,32 @@ namespace CapsuleArena.Gameplay.Match
         public float RemainingPhaseSeconds => IsSpawnedOnRunner
             ? (PhaseTimer.RemainingTime(Runner) ?? 0f)
             : (_localPhaseTicksRemaining / (float)CharacterCombatConfigSO.DefaultTickRate);
+
+        /// <summary>Gets the elapsed time in seconds since entering <see cref="MatchState.Playing"/> (0 outside Playing).</summary>
+        public float ElapsedPlayingSeconds
+        {
+            get
+            {
+                if (CurrentMatchState != MatchState.Playing)
+                {
+                    return 0f;
+                }
+
+                if (IsSpawnedOnRunner)
+                {
+                    float totalPlayingSec = ActivePlayingDurationSeconds;
+                    if (!PhaseTimer.IsRunning || PhaseTimer.Expired(Runner))
+                    {
+                        return totalPlayingSec;
+                    }
+
+                    float remainingSec = PhaseTimer.RemainingTime(Runner) ?? 0f;
+                    return Mathf.Clamp(totalPlayingSec - remainingSec, 0f, totalPlayingSec);
+                }
+
+                return GetElapsedPlayingTicks() / (float)CharacterCombatConfigSO.DefaultTickRate;
+            }
+        }
 
         /// <summary>Gets the current deterministic MatchId string (<c>&lt;Room&gt;_M&lt;Seq&gt;</c>).</summary>
         public string CurrentMatchId
@@ -148,6 +218,78 @@ namespace CapsuleArena.Gameplay.Match
             DamageReceiverRegistry.OnReceiverRegistered -= HandleAvatarRegistered;
         }
 
+        /// <summary>Injects an <see cref="IMatchRulesConfig"/> implementation for runtime configuration or unit testing.</summary>
+        public void SetMatchRulesConfig(IMatchRulesConfig rulesConfig)
+        {
+            _runtimeRulesOverride = rulesConfig;
+        }
+
+        /// <summary>
+        /// Returns the integer number of 60Hz ticks elapsed since the current match entered <see cref="MatchState.Playing"/>
+        /// (returns <c>0</c> whenever <see cref="CurrentMatchState"/> is not <see cref="MatchState.Playing"/>).
+        /// </summary>
+        public int GetElapsedPlayingTicks()
+        {
+            if (CurrentMatchState != MatchState.Playing)
+            {
+                return 0;
+            }
+
+            int totalPlayingTicks = ActivePlayingDurationTicks;
+            if (IsSpawnedOnRunner)
+            {
+                return Mathf.Clamp(
+                    Mathf.RoundToInt(ElapsedPlayingSeconds * CharacterCombatConfigSO.DefaultTickRate),
+                    0,
+                    totalPlayingTicks);
+            }
+
+            return Mathf.Clamp(totalPlayingTicks - _localPhaseTicksRemaining, 0, totalPlayingTicks);
+        }
+
+        /// <summary>
+        /// Returns <c>true</c> if a newly joining player should spawn alive as an active combatant:
+        /// always <c>true</c> before <see cref="MatchState.Playing"/>, and <c>true</c> during the opening
+        /// <see cref="ActiveLateJoinWindowSeconds"/> (default <c>60.0s</c>) of <see cref="MatchState.Playing"/>.
+        /// Strictly after that window, returns <c>false</c> so the player joins as a Ghost Spectator.
+        /// </summary>
+        public bool CanJoinCurrentMatchAlive()
+        {
+            if (CurrentMatchState != MatchState.Playing)
+            {
+                return true;
+            }
+
+            if (IsSpawnedOnRunner)
+            {
+                return ElapsedPlayingSeconds <= ActiveLateJoinWindowSeconds + 0.0001f;
+            }
+
+            return GetElapsedPlayingTicks() <= ActiveLateJoinWindowTicks;
+        }
+
+        /// <summary>
+        /// Scrubs transient local state when a Shared Mode <see cref="NetworkRunner"/> shuts down so
+        /// <see cref="MatchManager"/> can be cleanly re-registered on subsequent room joins without destroying the scene object.
+        /// </summary>
+        public void ResetAfterSessionShutdown()
+        {
+            _localRoster.Clear();
+            _standaloneHpOverrides.Clear();
+            _localState = MatchState.WaitingForPlayers;
+            _lastPresentationState = MatchState.WaitingForPlayers;
+            _localWinner = PlayerRef.None;
+            _localPlayerRef = PlayerRef.None;
+            _localPhaseTicksRemaining = 0;
+            _localMatchSequence = 1;
+            _cachedMatchIdSequence = -1;
+            _hasDispatchedEndedForCurrentMatch = false;
+            _pendingKillEvaluation = false;
+            _focusService?.SetFocusFlag(InputFocusFlag.MatchEnded, false);
+            EmitRosterCounts();
+            OnMatchStateChanged?.Invoke(MatchState.WaitingForPlayers);
+        }
+
         /// <summary>Injects focus service, session room code, and local player reference for HUD/tests.</summary>
         public void ConfigureServices(
             IInputFocusService focusService,
@@ -181,7 +323,7 @@ namespace CapsuleArena.Gameplay.Match
 
             int connected = CountConnectedPlayers();
             AdvanceMatchSequenceAndResetPlayers();
-            TransitionToState(connected >= MinPlayersToStart ? MatchState.Countdown : MatchState.WaitingForPlayers);
+            TransitionToState(connected >= ActiveMinPlayersToStart ? MatchState.Countdown : MatchState.WaitingForPlayers);
         }
 
         /// <summary>Submits or updates a player's validated display name in the match roster.</summary>
@@ -246,9 +388,11 @@ namespace CapsuleArena.Gameplay.Match
 
             if (Object.HasStateAuthority)
             {
+                MatchRoster.Clear();
                 NetworkedMatchState = MatchState.WaitingForPlayers;
                 NetworkedWinnerPlayer = PlayerRef.None;
                 NetworkedMatchSequence = 1;
+                PhaseTimer = TickTimer.None;
                 SyncActiveRunnerPlayersIntoRoster();
             }
 
@@ -349,15 +493,16 @@ namespace CapsuleArena.Gameplay.Match
                 return;
             }
 
-            bool effectiveAlive = CurrentMatchState == MatchState.Playing && !_localRoster.ContainsKey(player)
-                ? false
+            bool isNewMidMatchJoin = CurrentMatchState == MatchState.Playing && !_localRoster.ContainsKey(player);
+            bool effectiveAlive = isNewMidMatchJoin
+                ? (isAlive && CanJoinCurrentMatchAlive())
                 : isAlive;
 
             PlayerMatchStats stats = new PlayerMatchStats
             {
                 IsAlive = effectiveAlive,
                 Kills = Mathf.Max(0, kills),
-                PlacementRank = effectiveAlive ? 0 : MaxPlayersPerMatch,
+                PlacementRank = effectiveAlive ? 0 : ActiveMaxPlayersPerMatch,
                 DisplayName = string.IsNullOrWhiteSpace(displayName) ? $"P{GetSortablePlayerKey(player)}" : displayName
             };
 
@@ -495,21 +640,23 @@ namespace CapsuleArena.Gameplay.Match
             MatchState currentState,
             int connectedPlayers,
             int alivePlayers,
-            bool phaseTimerExpired)
+            bool phaseTimerExpired,
+            int minPlayersToStart = MinPlayersToStart)
         {
+            int minRequired = Mathf.Max(2, minPlayersToStart);
             return currentState switch
             {
-                MatchState.WaitingForPlayers => connectedPlayers >= MinPlayersToStart
+                MatchState.WaitingForPlayers => connectedPlayers >= minRequired
                     ? MatchState.Countdown
                     : MatchState.WaitingForPlayers,
-                MatchState.Countdown => connectedPlayers < MinPlayersToStart
+                MatchState.Countdown => connectedPlayers < minRequired
                     ? MatchState.WaitingForPlayers
                     : (phaseTimerExpired ? MatchState.Playing : MatchState.Countdown),
                 MatchState.Playing => (alivePlayers <= 1 || phaseTimerExpired)
                     ? MatchState.Ended
                     : MatchState.Playing,
                 MatchState.Ended => phaseTimerExpired
-                    ? (connectedPlayers >= MinPlayersToStart ? MatchState.Countdown : MatchState.WaitingForPlayers)
+                    ? (connectedPlayers >= minRequired ? MatchState.Countdown : MatchState.WaitingForPlayers)
                     : MatchState.Ended,
                 _ => MatchState.WaitingForPlayers
             };
@@ -653,7 +800,7 @@ namespace CapsuleArena.Gameplay.Match
 
         private void EvaluatePostFailoverTransition(int remainingConnected)
         {
-            if (CurrentMatchState == MatchState.Countdown && remainingConnected < MinPlayersToStart)
+            if (CurrentMatchState == MatchState.Countdown && remainingConnected < ActiveMinPlayersToStart)
             {
                 TransitionToState(MatchState.WaitingForPlayers);
             }
@@ -679,7 +826,7 @@ namespace CapsuleArena.Gameplay.Match
                 return;
             }
 
-            MatchState next = EvaluateStateTransition(cur, connected, alive, timerExpired);
+            MatchState next = EvaluateStateTransition(cur, connected, alive, timerExpired, ActiveMinPlayersToStart);
             if (next != cur)
             {
                 if (cur == MatchState.Ended && next != MatchState.Ended)
@@ -702,20 +849,20 @@ namespace CapsuleArena.Gameplay.Match
             switch (nextState)
             {
                 case MatchState.WaitingForPlayers:
-                    SetPhaseTimerTicks(0);
+                    SetPhaseTimer(0f, 0);
                     break;
                 case MatchState.Countdown:
                     _hasDispatchedEndedForCurrentMatch = false;
                     ResetAllConnectedRosterToAlive();
-                    SetPhaseTimerTicks(CountdownDurationTicks);
+                    SetPhaseTimer(ActiveCountdownDurationSeconds, ActiveCountdownDurationTicks);
                     break;
                 case MatchState.Playing:
                     _hasDispatchedEndedForCurrentMatch = false;
                     ResetAllConnectedRosterToAlive();
-                    SetPhaseTimerTicks(PlayingDurationTicks);
+                    SetPhaseTimer(ActivePlayingDurationSeconds, ActivePlayingDurationTicks);
                     break;
                 case MatchState.Ended:
-                    SetPhaseTimerTicks(EndedDurationTicks);
+                    SetPhaseTimer(ActiveEndedDurationSeconds, ActiveEndedDurationTicks);
                     break;
             }
 
@@ -810,12 +957,14 @@ namespace CapsuleArena.Gameplay.Match
             }
         }
 
-        private void SetPhaseTimerTicks(int ticks)
+        private void SetPhaseTimer(float durationSeconds, int standaloneTicks)
         {
-            _localPhaseTicksRemaining = Mathf.Max(0, ticks);
+            _localPhaseTicksRemaining = Mathf.Max(0, standaloneTicks);
             if (IsSpawnedOnRunner && Object.HasStateAuthority)
             {
-                PhaseTimer = ticks > 0 ? TickTimer.CreateFromTicks(Runner, ticks) : TickTimer.None;
+                PhaseTimer = durationSeconds > 0f
+                    ? TickTimer.CreateFromSeconds(Runner, durationSeconds)
+                    : TickTimer.None;
             }
         }
 
@@ -895,16 +1044,17 @@ namespace CapsuleArena.Gameplay.Match
                 return;
             }
 
+            int maxSlots = ActiveMaxPlayersPerMatch;
             foreach (PlayerRef p in Runner.ActivePlayers)
             {
-                if (!MatchRoster.ContainsKey(p) && MatchRoster.Count < MaxPlayersPerMatch)
+                if (!MatchRoster.ContainsKey(p) && MatchRoster.Count < maxSlots)
                 {
-                    bool joinAlive = NetworkedMatchState != MatchState.Playing;
+                    bool joinAlive = CanJoinCurrentMatchAlive();
                     MatchRoster.Add(p, new PlayerMatchStats
                     {
                         IsAlive = joinAlive,
                         Kills = 0,
-                        PlacementRank = joinAlive ? 0 : MaxPlayersPerMatch,
+                        PlacementRank = joinAlive ? 0 : maxSlots,
                         DisplayName = $"Player_{GetSortablePlayerKey(p)}"
                     });
                 }

@@ -1,3 +1,4 @@
+using CapsuleArena.CameraSystem;
 using CapsuleArena.Combat;
 using CapsuleArena.Core.Config;
 using CapsuleArena.Core.Input;
@@ -262,6 +263,134 @@ namespace CapsuleArena.Tests.EditMode
                 Object.DestroyImmediate(sharedMat);
                 Object.DestroyImmediate(cfg);
             }
+        }
+
+        [Test]
+        public void HorizontalSweepLeftAndRight_FanArcProgressCapsuleYawCameraAndFollowOrigin_SynchronizeIdenticallyOver0p18Sec()
+        {
+            CharacterCombatConfigSO cfg = ScriptableObject.CreateInstance<CharacterCombatConfigSO>();
+            VfxManager vfx = _rootGo.AddComponent<VfxManager>();
+            vfx.EnsurePoolInitialized();
+            vfx.SubscribeEvents();
+
+            GameObject playerGo = new GameObject("SweepSyncPlayer");
+            playerGo.transform.SetParent(_rootGo.transform, worldPositionStays: false);
+            playerGo.transform.SetPositionAndRotation(new Vector3(0f, 10f, 0f), Quaternion.identity);
+
+            GameObject pollerGo = new GameObject("SweepSyncPoller");
+            pollerGo.transform.SetParent(_rootGo.transform, worldPositionStays: false);
+            LocalInputPoller poller = pollerGo.AddComponent<LocalInputPoller>();
+
+            GameObject camGo = new GameObject("SweepSyncCamera");
+            camGo.transform.SetParent(_rootGo.transform, worldPositionStays: false);
+            Camera cam = camGo.AddComponent<Camera>();
+
+            PlayerHealth health = playerGo.AddComponent<PlayerHealth>();
+            health.ConfigureForStandaloneTest(cfg, PlayerRef.FromEncoded(1), hasStateAuthority: true);
+            PlayerMobilityController mobility = playerGo.AddComponent<PlayerMobilityController>();
+            PlayerCombatController combat = playerGo.AddComponent<PlayerCombatController>();
+            combat.ConfigureForTest(cfg, PlayerRef.FromEncoded(1), health, mobility, poller);
+
+            CameraController camCtrl = playerGo.AddComponent<CameraController>();
+            camCtrl.BindLocalCamera(cam, poller, null, cfg);
+            camCtrl.SetPerspective(CameraPerspectiveMode.TPS);
+
+            try
+            {
+                // 1. Trigger HorizontalSweepLeft (Key 1 -> 0 deg to -90 deg over 0.18s)
+                NetworkInputData leftInput = default;
+                leftInput.LookYaw = 0f;
+                leftInput.Buttons.Set((int)NetworkInputButtons.HorizontalSweepLeft, true);
+                combat.SimulateCombatTick(in leftInput, cfg);
+
+                PooledVfxInstance activeLeftArc = FindNewestActiveSlashArc(vfx);
+                Assert.That(activeLeftArc, Is.Not.Null, "HorizontalSweepLeft must spawn an active SlashArc VFX.");
+                Assert.That(activeLeftArc.CurrentSweepProgress, Is.EqualTo(0f).Within(0.001f), "Fan must start at 0% progress.");
+
+                // Verify Left mesh UV progression: first outer vertex starts at forward (+Z, X ~ 0, u = 0), last outer vertex ends at left (-X, Z ~ 0, u = 1)
+                Mesh leftMesh = activeLeftArc.GetComponentInChildren<MeshFilter>().sharedMesh;
+                Vector2[] leftUvs = leftMesh.uv;
+                Vector3[] leftVerts = leftMesh.vertices;
+                Assert.That(leftUvs[0].x, Is.EqualTo(0f).Within(0.001f));
+                Assert.That(leftVerts[1].x, Is.EqualTo(0f).Within(0.02f), "Left sweep fan must begin sweeping from 0 deg forward.");
+                Assert.That(leftUvs[leftUvs.Length - 1].x, Is.EqualTo(1f).Within(0.001f));
+                Assert.That(leftVerts[leftVerts.Length - 1].x, Is.LessThan(-2.95f), "Left sweep fan must finish at -90 deg (-3.0m X).");
+
+                // Advance halfway (0.09s of 0.18s) + move capsule with WASD -> both capsule yaw (-45 deg), camera (-45 deg), and fan (50%) match!
+                playerGo.transform.position = new Vector3(1.5f, 10f, 2.0f);
+                combat.StepVisualHorizontalSweepRender(0.09f);
+                vfx.TickActiveVfx(0.09f);
+                activeLeftArc.SyncFollowPosition();
+                camCtrl.StepCameraFrame(0f);
+
+                Assert.That(combat.VisualSweepProgress, Is.EqualTo(0.5f).Within(0.01f));
+                Assert.That(activeLeftArc.CurrentSweepProgress, Is.EqualTo(0.5f).Within(0.01f), "At 50% duration, fan must be 50% swept.");
+                Assert.That(Mathf.DeltaAngle(0f, playerGo.transform.eulerAngles.y), Is.EqualTo(-45f).Within(0.5f), "At 50% duration, capsule must be at -45 deg.");
+                Assert.That(Mathf.DeltaAngle(0f, cam.transform.eulerAngles.y), Is.EqualTo(-45f).Within(0.5f), "Camera must track -45 deg synchronously.");
+                Assert.That(Vector3.Distance(activeLeftArc.transform.position, playerGo.transform.position + Vector3.up * MeleeSectorMath.ChestHeightOffsetMeters),
+                    Is.LessThan(0.001f), "Fan origin must follow moving capsule chest.");
+
+                // Advance remaining 0.09s (total 0.18s) -> fan hits exact 100% (full 90-deg sector) at the exact moment capsule hits -90 deg!
+                combat.StepVisualHorizontalSweepRender(0.09f);
+                vfx.TickActiveVfx(0.09f);
+                activeLeftArc.SyncFollowPosition();
+                camCtrl.StepCameraFrame(0f);
+
+                Assert.That(combat.VisualSweepProgress, Is.EqualTo(1.0f).Within(0.001f));
+                Assert.That(activeLeftArc.CurrentSweepProgress, Is.EqualTo(1.0f).Within(0.001f), "At 0.18s, fan must reach 100% full 90-deg arc.");
+                Assert.That(Mathf.DeltaAngle(0f, playerGo.transform.eulerAngles.y), Is.EqualTo(-90f).Within(0.5f), "At 0.18s, capsule rotation must finish at -90 deg.");
+
+                // Inspect MaterialPropertyBlock _SweepProgress directly
+                var arcRenderer = activeLeftArc.GetComponentInChildren<MeshRenderer>();
+                var mpb = new MaterialPropertyBlock();
+                arcRenderer.GetPropertyBlock(mpb);
+                Assert.That(mpb.GetFloat(Shader.PropertyToID("_SweepProgress")), Is.EqualTo(1.0f).Within(0.001f));
+
+                // Clear ticks & cooldown (75 ticks), then verify HorizontalSweepRight (-90 deg -> 0 deg, +90 deg clockwise)
+                vfx.TickActiveVfx(0.5f);
+                NetworkInputData idle = default;
+                idle.LookYaw = -90f;
+                for (int t = 0; t < 75; t++)
+                {
+                    combat.SimulateCombatTick(in idle, cfg);
+                }
+
+                NetworkInputData rightInput = default;
+                rightInput.LookYaw = -90f;
+                rightInput.Buttons.Set((int)NetworkInputButtons.HorizontalSweepRight, true);
+                combat.SimulateCombatTick(in rightInput, cfg);
+
+                PooledVfxInstance activeRightArc = FindNewestActiveSlashArc(vfx);
+                Assert.That(activeRightArc, Is.Not.Null);
+                Assert.That(activeRightArc.CurrentSweepProgress, Is.EqualTo(0f).Within(0.001f));
+
+                combat.StepVisualHorizontalSweepRender(0.18f);
+                vfx.TickActiveVfx(0.18f);
+                activeRightArc.SyncFollowPosition();
+
+                Assert.That(activeRightArc.CurrentSweepProgress, Is.EqualTo(1.0f).Within(0.001f));
+                Assert.That(Mathf.DeltaAngle(0f, playerGo.transform.eulerAngles.y), Is.EqualTo(0f).Within(0.5f), "Right sweep from -90 deg must finish at 0 deg at 0.18s.");
+            }
+            finally
+            {
+                vfx.UnsubscribeEvents();
+                Object.DestroyImmediate(cfg);
+            }
+        }
+
+        private static PooledVfxInstance FindNewestActiveSlashArc(VfxManager vfx)
+        {
+            PooledVfxInstance found = null;
+            for (int i = 0; i < vfx.AllPrewarmedInstances.Count; i++)
+            {
+                PooledVfxInstance inst = vfx.AllPrewarmedInstances[i];
+                if (inst != null && inst.Category == VfxPoolCategory.SlashArc && inst.IsActiveInScene)
+                {
+                    found = inst;
+                }
+            }
+
+            return found;
         }
     }
 }

@@ -47,6 +47,16 @@ namespace CapsuleArena.Presentation.VFX
         /// <summary>Wall impact spark crisp ice white (#E2E8F0).</summary>
         public static readonly Color WallSparkWhite = new Color32(226, 232, 240, 255);
 
+        /// <summary>Default Horizontal Sweep angular turn duration in seconds when not explicitly supplied (0.18s).</summary>
+        public const float DefaultHorizontalSweepDurationSec = 0.18f;
+
+        /// <summary>Short afterimage fade duration in seconds once the full 90-deg fan and capsule turn complete (0.06s).</summary>
+        public const float SweepFadeTailDurationSec = 0.06f;
+
+        [Header("Optional Prebuilt Assets")]
+        [Tooltip("Shared URP SlashSectorArc material asset ensuring shader inclusion in Standalone builds.")]
+        [SerializeField] private Material _slashArcMaterialAsset;
+
         private readonly Queue<PooledVfxInstance> _slashPool = new Queue<PooledVfxInstance>(SlashArcPoolSize);
         private readonly Queue<PooledVfxInstance> _sparkPool = new Queue<PooledVfxInstance>(ImpactSparkPoolSize);
         private readonly Queue<PooledVfxInstance> _burstPool = new Queue<PooledVfxInstance>(BurstPoolSize);
@@ -58,6 +68,7 @@ namespace CapsuleArena.Presentation.VFX
         private Mesh _horizontalRightMesh;
         private Material _sharedArcMaterial;
         private Material _sharedParticleMaterial;
+        private bool _ownsArcMaterial;
         private bool _isInitialized;
 
         /// <summary>Gets all 20 pre-warmed VFX instances for inspection and EditMode assertions.</summary>
@@ -89,6 +100,18 @@ namespace CapsuleArena.Presentation.VFX
 
         private void OnEnable()
         {
+            SubscribeEvents();
+        }
+
+        private void OnDisable()
+        {
+            UnsubscribeEvents();
+        }
+
+        /// <summary>Subscribes idempotently to global combat, projectile, health, and mobility events.</summary>
+        public void SubscribeEvents()
+        {
+            UnsubscribeEvents();
             PlayerCombatController.OnAnyMeleeSwingExecuted += HandleMeleeSwing;
             PlayerCombatController.OnAnyRangedShotExecuted += HandleRangedShot;
             NetworkProjectile.OnAnyProjectileImpact += HandleProjectileImpact;
@@ -96,7 +119,8 @@ namespace CapsuleArena.Presentation.VFX
             PlayerMobilityController.OnAnyMobilityBurstStarted += HandleMobilityBurst;
         }
 
-        private void OnDisable()
+        /// <summary>Unsubscribes from global combat, projectile, health, and mobility events.</summary>
+        public void UnsubscribeEvents()
         {
             PlayerCombatController.OnAnyMeleeSwingExecuted -= HandleMeleeSwing;
             PlayerCombatController.OnAnyRangedShotExecuted -= HandleRangedShot;
@@ -110,18 +134,34 @@ namespace CapsuleArena.Presentation.VFX
             DestroyGeneratedAsset(_verticalSlashMesh);
             DestroyGeneratedAsset(_horizontalLeftMesh);
             DestroyGeneratedAsset(_horizontalRightMesh);
-            DestroyGeneratedAsset(_sharedArcMaterial);
+            if (_ownsArcMaterial)
+            {
+                DestroyGeneratedAsset(_sharedArcMaterial);
+            }
+
             DestroyGeneratedAsset(_sharedParticleMaterial);
             _verticalSlashMesh = null;
             _horizontalLeftMesh = null;
             _horizontalRightMesh = null;
             _sharedArcMaterial = null;
             _sharedParticleMaterial = null;
+            _ownsArcMaterial = false;
         }
 
         private void Update()
         {
             TickActiveVfx(Time.deltaTime);
+        }
+
+        private void LateUpdate()
+        {
+            for (int i = 0; i < _activeInstances.Count; i++)
+            {
+                if (_activeInstances[i] != null)
+                {
+                    _activeInstances[i].SyncFollowPosition();
+                }
+            }
         }
 
         /// <summary>Pre-warms all 20 pooled VFX instances and sector meshes idempotently.</summary>
@@ -139,8 +179,14 @@ namespace CapsuleArena.Presentation.VFX
             PrewarmCategory(VfxPoolCategory.MobilityAndDeathBurst, BurstPoolSize, _burstPool);
         }
 
-        /// <summary>Spawns a pooled <see cref="PooledVfxInstance"/> matching the exact melee swing cone.</summary>
-        public PooledVfxInstance SpawnMeleeSlashArc(Vector3 origin, Quaternion rotation, MeleeSwingKind kind)
+        /// <summary>Spawns a pooled <see cref="PooledVfxInstance"/> matching the exact melee swing cone and sweep duration.</summary>
+        public PooledVfxInstance SpawnMeleeSlashArc(
+            Vector3 origin,
+            Quaternion rotation,
+            MeleeSwingKind kind,
+            float sweepDurationSec = 0f,
+            Transform attackerTransform = null,
+            PlayerCombatController syncCombatController = null)
         {
             EnsurePoolInitialized();
             PooledVfxInstance inst = AcquireFromBucket(_slashPool, VfxPoolCategory.SlashArc);
@@ -148,15 +194,24 @@ namespace CapsuleArena.Presentation.VFX
 
             if (kind == MeleeSwingKind.VerticalSlash)
             {
-                inst.PlaySlashArc(chestPos, rotation, _verticalSlashMesh, 50f, 2.5f, VerticalSlashCyan, 0.22f);
-            }
-            else if (kind == MeleeSwingKind.HorizontalSweepLeft)
-            {
-                inst.PlaySlashArc(chestPos, rotation, _horizontalLeftMesh, 90f, 3.0f, HorizontalSweepAmber, 0.24f);
+                inst.PlaySlashArc(chestPos, rotation, _verticalSlashMesh, 50f, 2.5f, VerticalSlashCyan, 0.22f, 0f, attackerTransform, null);
             }
             else
             {
-                inst.PlaySlashArc(chestPos, rotation, _horizontalRightMesh, 90f, 3.0f, HorizontalSweepAmber, 0.24f);
+                float revealDur = sweepDurationSec > 0.001f ? sweepDurationSec : DefaultHorizontalSweepDurationSec;
+                float totalDur = revealDur + SweepFadeTailDurationSec;
+                Mesh sweepMesh = kind == MeleeSwingKind.HorizontalSweepLeft ? _horizontalLeftMesh : _horizontalRightMesh;
+                inst.PlaySlashArc(
+                    chestPos,
+                    rotation,
+                    sweepMesh,
+                    90f,
+                    3.0f,
+                    HorizontalSweepAmber,
+                    totalDur,
+                    revealDur,
+                    attackerTransform,
+                    syncCombatController);
             }
 
             _activeInstances.Add(inst);
@@ -309,11 +364,8 @@ namespace CapsuleArena.Presentation.VFX
 
         private void BuildSharedMaterialsAndMeshes()
         {
-            Shader urpUnlit = Shader.Find("Universal Render Pipeline/Unlit");
-            if (urpUnlit == null)
-            {
-                urpUnlit = Shader.Find("Sprites/Default");
-            }
+            Shader slashShader = Shader.Find("CapsuleArena/VFX/SlashSectorArc");
+            Shader urpUnlit = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Sprites/Default");
 
             Shader urpParticlesUnlit = Shader.Find("Universal Render Pipeline/Particles/Unlit");
             if (urpParticlesUnlit == null)
@@ -321,11 +373,23 @@ namespace CapsuleArena.Presentation.VFX
                 urpParticlesUnlit = urpUnlit;
             }
 
-            _sharedArcMaterial = new Material(urpUnlit) { name = "M_SharedVfxSlashArc", enableInstancing = true };
+            if (_slashArcMaterialAsset != null)
+            {
+                _sharedArcMaterial = _slashArcMaterialAsset;
+                _ownsArcMaterial = false;
+            }
+            else
+            {
+                Shader chosenArcShader = slashShader != null ? slashShader : urpUnlit;
+                _sharedArcMaterial = new Material(chosenArcShader) { name = "M_SharedVfxSlashArc", enableInstancing = true };
+                _ownsArcMaterial = true;
+            }
+
             _sharedParticleMaterial = new Material(urpParticlesUnlit) { name = "M_SharedVfxSpark" };
 
-            _verticalSlashMesh = BuildAnnularSectorMesh("Mesh_VerticalSlash_50deg_2p5m", -25f, 25f, 0.70f, 2.50f, 14, verticalPlane: true);
-            _horizontalLeftMesh = BuildAnnularSectorMesh("Mesh_SweepLeft_90deg_3p0m", -90f, 0f, 0.85f, 3.00f, 18, verticalPlane: false);
+            // UVs run u = 0 -> 1 from swing start direction (0 deg) out to swing end (-90 deg Left / +90 deg Right)
+            _verticalSlashMesh = BuildAnnularSectorMesh("Mesh_VerticalSlash_50deg_2p5m", 25f, -25f, 0.70f, 2.50f, 14, verticalPlane: true);
+            _horizontalLeftMesh = BuildAnnularSectorMesh("Mesh_SweepLeft_90deg_3p0m", 0f, -90f, 0.85f, 3.00f, 18, verticalPlane: false);
             _horizontalRightMesh = BuildAnnularSectorMesh("Mesh_SweepRight_90deg_3p0m", 0f, 90f, 0.85f, 3.00f, 18, verticalPlane: false);
         }
 
@@ -339,18 +403,23 @@ namespace CapsuleArena.Presentation.VFX
             bool verticalPlane)
         {
             Vector3[] verts = new Vector3[(segments + 1) * 2];
+            Vector2[] uvs = new Vector2[(segments + 1) * 2];
             for (int i = 0; i <= segments; i++)
             {
-                float rad = Mathf.Lerp(startAngleDeg, endAngleDeg, (float)i / segments) * Mathf.Deg2Rad;
+                float u = (float)i / segments;
+                float rad = Mathf.Lerp(startAngleDeg, endAngleDeg, u) * Mathf.Deg2Rad;
                 Vector3 dir = verticalPlane
                     ? new Vector3(0f, Mathf.Sin(rad), Mathf.Cos(rad))
                     : new Vector3(Mathf.Sin(rad), 0f, Mathf.Cos(rad));
                 verts[i * 2] = dir * innerRadius;
                 verts[i * 2 + 1] = dir * outerRadius;
+                uvs[i * 2] = new Vector2(u, 0f);
+                uvs[i * 2 + 1] = new Vector2(u, 1f);
             }
 
             Mesh mesh = new Mesh { name = meshName };
             mesh.vertices = verts;
+            mesh.uv = uvs;
             mesh.triangles = BuildDoubleSidedStripTriangles(segments);
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
@@ -395,7 +464,7 @@ namespace CapsuleArena.Presentation.VFX
 
         private void HandleMeleeSwing(MeleeSwingEvent evt)
         {
-            SpawnMeleeSlashArc(evt.Origin, evt.Rotation, evt.Kind);
+            SpawnMeleeSlashArc(evt.Origin, evt.Rotation, evt.Kind, evt.SweepDurationSec, evt.AttackerTransform, evt.SourceController);
         }
 
         private void HandleRangedShot(Vector3 muzzlePos, Vector3 aimDir, bool blockedByFlushWall)

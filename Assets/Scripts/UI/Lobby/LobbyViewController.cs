@@ -27,6 +27,12 @@ namespace CapsuleArena.UI.Lobby
         /// <summary>Regex enforcing 3..16 alphanumeric, underscore, or hyphen RoomCode characters.</summary>
         public const string RoomCodeRegexPattern = "^[A-Za-z0-9_-]{3,16}$";
 
+        /// <summary>Persistent field label displayed directly above the DisplayName input box.</summary>
+        public const string DisplayNameFieldLabelText = "PLAYER NAME (3-16 chars, blank = auto)";
+
+        /// <summary>Persistent field label displayed directly above the RoomCode input box.</summary>
+        public const string RoomCodeFieldLabelText = "ROOM CODE (Used for Create / Join Room)";
+
         private static readonly Regex DisplayNameRegex = new Regex(DisplayNameRegexPattern, RegexOptions.Compiled);
         private static readonly Regex RoomCodeRegex = new Regex(RoomCodeRegexPattern, RegexOptions.Compiled);
 
@@ -46,7 +52,9 @@ namespace CapsuleArena.UI.Lobby
         [SerializeField] private ToastNotificationView _toastView;
 
         [Header("Main Lobby Controls")]
+        [SerializeField] private TMP_Text _displayNameLabel;
         [SerializeField] private TMP_InputField _displayNameInput;
+        [SerializeField] private TMP_Text _roomCodeLabel;
         [SerializeField] private TMP_InputField _roomCodeInput;
         [SerializeField] private Button _quickJoinButton;
         [SerializeField] private Button _createOrJoinButton;
@@ -92,8 +100,14 @@ namespace CapsuleArena.UI.Lobby
         /// <summary>Gets the attached <see cref="ToastNotificationView"/> instance.</summary>
         public ToastNotificationView ToastView => _toastView;
 
+        /// <summary>Gets the persistent label displayed above the DisplayName input field.</summary>
+        public TMP_Text DisplayNameLabel => _displayNameLabel;
+
         /// <summary>Gets the DisplayName input field.</summary>
         public TMP_InputField DisplayNameInput => _displayNameInput;
+
+        /// <summary>Gets the persistent label displayed above the RoomCode input field.</summary>
+        public TMP_Text RoomCodeLabel => _roomCodeLabel;
 
         /// <summary>Gets the RoomCode input field.</summary>
         public TMP_InputField RoomCodeInput => _roomCodeInput;
@@ -248,7 +262,25 @@ namespace CapsuleArena.UI.Lobby
 
             if (_sessionService is FusionSessionManager fsm && fsm.ActiveRunner != null)
             {
+                if (string.IsNullOrEmpty(roomCode) && fsm.ActiveRunner.SessionInfo.IsValid)
+                {
+                    string joinedName = fsm.ActiveRunner.SessionInfo.Name;
+                    if (!string.IsNullOrWhiteSpace(joinedName) && joinedName.Length <= 16)
+                    {
+                        _activeRoomLabel = joinedName;
+                    }
+                }
+
                 NotifyLocalPlayerSpawned(fsm.ActiveRunner.LocalPlayer);
+            }
+
+            if (_matchManager != null && _matchManager.CurrentMatchState == MatchState.Playing)
+            {
+                if (_mainLobbyPanel != null) _mainLobbyPanel.SetActive(false);
+                if (_waitingRoomPanel != null) _waitingRoomPanel.SetActive(false);
+                if (_connectingOverlay != null) _connectingOverlay.SetActive(false);
+                ShowRootCanvas(false);
+                return true;
             }
 
             ShowWaitingRoom(_activeRoomLabel, new[] { _validatedLocalDisplayName }, hostIndex: 0, countdownRemainingSec: 0);
@@ -448,7 +480,20 @@ namespace CapsuleArena.UI.Lobby
 
         private void RefreshWaitingRoomFromMatchRoster()
         {
-            if (!IsWaitingRoomVisible || _matchManager == null)
+            if (_matchManager == null)
+            {
+                return;
+            }
+
+            if (_matchManager.CurrentMatchState == MatchState.Playing)
+            {
+                if (_mainLobbyPanel != null) _mainLobbyPanel.SetActive(false);
+                if (_waitingRoomPanel != null) _waitingRoomPanel.SetActive(false);
+                ShowRootCanvas(false);
+                return;
+            }
+
+            if (!IsWaitingRoomVisible)
             {
                 return;
             }
@@ -467,6 +512,14 @@ namespace CapsuleArena.UI.Lobby
 
         private void HandleSessionDisconnected(string reason)
         {
+            if (string.Equals(reason, "LeaveWaitingRoom", StringComparison.Ordinal) ||
+                string.Equals(reason, "UserLeft", StringComparison.Ordinal))
+            {
+                _isHandshakeInProgress = false;
+                ShowMainLobby();
+                return;
+            }
+
             HandleConnectionFailure($"Disconnected ({reason}). Returned to Lobby.");
         }
 
@@ -609,6 +662,10 @@ namespace CapsuleArena.UI.Lobby
             {
                 BuildDefaultLobbyHierarchy();
             }
+            else
+            {
+                EnsureMainLobbyLabelsAndLayout();
+            }
 
             if (_toastView == null)
             {
@@ -627,17 +684,103 @@ namespace CapsuleArena.UI.Lobby
 
         private void BuildMainLobbyCard()
         {
-            _mainLobbyPanel = CreatePanel("MainLobbyPanel", new Vector2(540f, 450f), UiThemeAndFontProvider.DeepSlate);
-            CreateLabel(_mainLobbyPanel.transform, "Txt_Title", "CAPSULE ARENA DUEL", 28f, new Vector2(0f, 178f), UiThemeAndFontProvider.ElectricCyan);
-            CreateLabel(_mainLobbyPanel.transform, "Txt_Subtitle", "4-Player 60Hz Shared Mode Arena", 15f, new Vector2(0f, 144f), UiThemeAndFontProvider.MutedSteel);
+            _mainLobbyPanel = CreatePanel("MainLobbyPanel", new Vector2(540f, 490f), UiThemeAndFontProvider.DeepSlate);
+            CreateLabel(_mainLobbyPanel.transform, "Txt_Title", "CAPSULE ARENA DUEL", 28f, new Vector2(0f, 196f), UiThemeAndFontProvider.ElectricCyan);
+            CreateLabel(_mainLobbyPanel.transform, "Txt_Subtitle", "4-Player 60Hz Shared Mode Arena", 15f, new Vector2(0f, 162f), UiThemeAndFontProvider.MutedSteel);
 
-            _displayNameInput = CreateInputField(_mainLobbyPanel.transform, "InputField_DisplayName", "Display Name (blank = Player_XXXX)", new Vector2(0f, 82f));
-            _roomCodeInput = CreateInputField(_mainLobbyPanel.transform, "InputField_RoomCode", "Room Code (3-16 chars, e.g. DUEL01)", new Vector2(0f, 20f));
+            _displayNameLabel = CreateFieldHeaderLabel(_mainLobbyPanel.transform, "Lbl_DisplayName", DisplayNameFieldLabelText, new Vector2(0f, 118f), UiThemeAndFontProvider.ElectricCyan);
+            _displayNameInput = CreateInputField(_mainLobbyPanel.transform, "InputField_DisplayName", "e.g. Anph21 (leave blank for Player_XXXX)", new Vector2(0f, 82f));
 
-            _quickJoinButton = CreateButton(_mainLobbyPanel.transform, "BTN_QuickJoin", "QUICK JOIN", new Vector2(-120f, -52f), new Vector2(215f, 48f), new Color32(0, 180, 216, 255));
-            _createOrJoinButton = CreateButton(_mainLobbyPanel.transform, "BTN_CreateOrJoinRoom", "CREATE / JOIN ROOM", new Vector2(120f, -52f), new Vector2(215f, 48f), new Color32(255, 159, 28, 255));
-            _openLeaderboardButton = CreateButton(_mainLobbyPanel.transform, "BTN_OpenLeaderboard", "LEADERBOARD", new Vector2(-120f, -120f), new Vector2(215f, 42f), UiThemeAndFontProvider.CardSurface);
-            _openSettingsButton = CreateButton(_mainLobbyPanel.transform, "BTN_OpenSettings", "SETTINGS & KEYS", new Vector2(120f, -120f), new Vector2(215f, 42f), UiThemeAndFontProvider.CardSurface);
+            _roomCodeLabel = CreateFieldHeaderLabel(_mainLobbyPanel.transform, "Lbl_RoomCode", RoomCodeFieldLabelText, new Vector2(0f, 28f), UiThemeAndFontProvider.SolarAmber);
+            _roomCodeInput = CreateInputField(_mainLobbyPanel.transform, "InputField_RoomCode", "e.g. ROOM1 (ignored by Quick Join)", new Vector2(0f, -8f));
+
+            _quickJoinButton = CreateButton(_mainLobbyPanel.transform, "BTN_QuickJoin", "QUICK JOIN", new Vector2(-120f, -82f), new Vector2(215f, 48f), new Color32(0, 180, 216, 255));
+            _createOrJoinButton = CreateButton(_mainLobbyPanel.transform, "BTN_CreateOrJoinRoom", "CREATE / JOIN ROOM", new Vector2(120f, -82f), new Vector2(215f, 48f), new Color32(255, 159, 28, 255));
+            _openLeaderboardButton = CreateButton(_mainLobbyPanel.transform, "BTN_OpenLeaderboard", "LEADERBOARD", new Vector2(-120f, -148f), new Vector2(215f, 42f), UiThemeAndFontProvider.CardSurface);
+            _openSettingsButton = CreateButton(_mainLobbyPanel.transform, "BTN_OpenSettings", "SETTINGS & KEYS", new Vector2(120f, -148f), new Vector2(215f, 42f), UiThemeAndFontProvider.CardSurface);
+        }
+
+        /// <summary>
+        /// Ensures persistent field labels exist and aligns card spacing even when <c>MainLobbyPanel</c>
+        /// was serialized prior to adding the input labels.
+        /// </summary>
+        public void EnsureMainLobbyLabelsAndLayout()
+        {
+            if (_mainLobbyPanel == null)
+            {
+                return;
+            }
+
+            Transform panelTr = _mainLobbyPanel.transform;
+            if (_mainLobbyPanel.TryGetComponent(out RectTransform panelRt))
+            {
+                panelRt.sizeDelta = new Vector2(Mathf.Max(540f, panelRt.sizeDelta.x), 490f);
+            }
+
+            SetChildAnchoredY(panelTr, "Txt_Title", 196f);
+            SetChildAnchoredY(panelTr, "Txt_Subtitle", 162f);
+
+            if (_displayNameLabel == null)
+            {
+                Transform existingNameLbl = panelTr.Find("Lbl_DisplayName");
+                _displayNameLabel = existingNameLbl != null && existingNameLbl.TryGetComponent(out TMP_Text dl)
+                    ? dl
+                    : CreateFieldHeaderLabel(panelTr, "Lbl_DisplayName", DisplayNameFieldLabelText, new Vector2(0f, 118f), UiThemeAndFontProvider.ElectricCyan);
+            }
+
+            _displayNameLabel.text = DisplayNameFieldLabelText;
+            _displayNameLabel.rectTransform.anchoredPosition = new Vector2(0f, 118f);
+
+            if (_displayNameInput != null)
+            {
+                ((RectTransform)_displayNameInput.transform).anchoredPosition = new Vector2(0f, 82f);
+                if (_displayNameInput.placeholder is TMP_Text namePh)
+                {
+                    namePh.text = "e.g. Anph21 (leave blank for Player_XXXX)";
+                }
+            }
+
+            if (_roomCodeLabel == null)
+            {
+                Transform existingCodeLbl = panelTr.Find("Lbl_RoomCode");
+                _roomCodeLabel = existingCodeLbl != null && existingCodeLbl.TryGetComponent(out TMP_Text rl)
+                    ? rl
+                    : CreateFieldHeaderLabel(panelTr, "Lbl_RoomCode", RoomCodeFieldLabelText, new Vector2(0f, 28f), UiThemeAndFontProvider.SolarAmber);
+            }
+
+            _roomCodeLabel.text = RoomCodeFieldLabelText;
+            _roomCodeLabel.rectTransform.anchoredPosition = new Vector2(0f, 28f);
+
+            if (_roomCodeInput != null)
+            {
+                ((RectTransform)_roomCodeInput.transform).anchoredPosition = new Vector2(0f, -8f);
+                if (_roomCodeInput.placeholder is TMP_Text codePh)
+                {
+                    codePh.text = "e.g. ROOM1 (ignored by Quick Join)";
+                }
+            }
+
+            if (_quickJoinButton != null) ((RectTransform)_quickJoinButton.transform).anchoredPosition = new Vector2(-120f, -82f);
+            if (_createOrJoinButton != null) ((RectTransform)_createOrJoinButton.transform).anchoredPosition = new Vector2(120f, -82f);
+            if (_openLeaderboardButton != null) ((RectTransform)_openLeaderboardButton.transform).anchoredPosition = new Vector2(-120f, -148f);
+            if (_openSettingsButton != null) ((RectTransform)_openSettingsButton.transform).anchoredPosition = new Vector2(120f, -148f);
+        }
+
+        private static void SetChildAnchoredY(Transform parent, string childName, float y)
+        {
+            Transform child = parent.Find(childName);
+            if (child != null && child.TryGetComponent(out RectTransform rt))
+            {
+                rt.anchoredPosition = new Vector2(rt.anchoredPosition.x, y);
+            }
+        }
+
+        private static TMP_Text CreateFieldHeaderLabel(Transform parent, string goName, string content, Vector2 anchoredPos, Color color)
+        {
+            TMP_Text tmp = CreateLabel(parent, goName, content, 13.5f, anchoredPos, color);
+            tmp.alignment = TextAlignmentOptions.MidlineLeft;
+            tmp.rectTransform.sizeDelta = new Vector2(450f, 22f);
+            return tmp;
         }
 
         private void BuildConnectingOverlay()

@@ -72,9 +72,17 @@ namespace CapsuleArena.UI.Chat
 
             _pooledRowObjects.Clear();
             _pooledRowLabels.Clear();
+            int existingCount = _contentContainer.childCount;
             for (int i = 0; i < _poolCapacity; i++)
             {
-                CreatePrewarmedRow(i);
+                if (i < existingCount)
+                {
+                    BindExistingRow(_contentContainer.GetChild(i).gameObject);
+                }
+                else
+                {
+                    CreatePrewarmedRow(i);
+                }
             }
 
             _activeRowCount = 0;
@@ -199,6 +207,32 @@ namespace CapsuleArena.UI.Chat
                 vlg.childForceExpandWidth = true;
                 vlg.childForceExpandHeight = false;
             }
+        }
+
+        private void BindExistingRow(GameObject rowGo)
+        {
+            if (!rowGo.TryGetComponent(out TMP_Text tmp))
+            {
+                TextMeshProUGUI createdTmp = rowGo.AddComponent<TextMeshProUGUI>();
+                UiThemeAndFontProvider.EnsureFontAssigned(createdTmp);
+                createdTmp.fontSize = 13.5f;
+                createdTmp.alignment = TextAlignmentOptions.MidlineLeft;
+                createdTmp.textWrappingMode = TextWrappingModes.Normal;
+                createdTmp.overflowMode = TextOverflowModes.Ellipsis;
+                createdTmp.richText = false;
+                createdTmp.raycastTarget = false;
+                createdTmp.color = UiThemeAndFontProvider.PublicOffWhite;
+                tmp = createdTmp;
+            }
+            else
+            {
+                tmp.text = string.Empty;
+                tmp.richText = false;
+            }
+
+            rowGo.SetActive(false);
+            _pooledRowObjects.Add(rowGo);
+            _pooledRowLabels.Add(tmp);
         }
 
         private void CreatePrewarmedRow(int index)

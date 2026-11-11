@@ -100,6 +100,15 @@ namespace CapsuleArena.Networking
         /// <summary>Gets the spawned local player <see cref="NetworkObject"/> when present.</summary>
         public NetworkObject LocalPlayerAvatar => _localPlayerAvatar;
 
+        private void OnDestroy()
+        {
+            if (_runnerHostObject != null)
+            {
+                Destroy(_runnerHostObject);
+                _runnerHostObject = null;
+            }
+        }
+
         /// <summary>Injects optional focus/input/spawn/match dependencies for runtime wiring and integration tests.</summary>
         public void ConfigureDependencies(
             FusionObjectPoolProvider poolProvider,
@@ -387,7 +396,12 @@ namespace CapsuleArena.Networking
             }
 
             _runnerHostObject = new GameObject("FusionSessionRunner");
-            _runnerHostObject.transform.SetParent(transform, worldPositionStays: false);
+            Scene activeScene = SceneManager.GetActiveScene();
+            if (activeScene.IsValid() && _runnerHostObject.scene != activeScene)
+            {
+                SceneManager.MoveGameObjectToScene(_runnerHostObject, activeScene);
+            }
+
             _runner = _runnerHostObject.AddComponent<NetworkRunner>();
             _runner.ProvideInput = true;
             _runner.AddCallbacks(this);
@@ -398,6 +412,7 @@ namespace CapsuleArena.Networking
             _localAvatarSpawned = false;
             _localPlayerAvatar = null;
             _focusService?.ResetAllFlags();
+            _matchManager?.ResetAfterSessionShutdown();
         }
 
         private void NotifyDisconnectOnce(string reason)

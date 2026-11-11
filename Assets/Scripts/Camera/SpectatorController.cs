@@ -123,11 +123,21 @@ namespace CapsuleArena.CameraSystem
 
         private void OnDisable()
         {
+            if (_mode != SpectatorMode.Disabled)
+            {
+                DeactivateSpectator();
+            }
+
             UnbindAllEvents();
         }
 
         private void OnDestroy()
         {
+            if (_mode != SpectatorMode.Disabled)
+            {
+                DeactivateSpectator();
+            }
+
             UnbindAllEvents();
         }
 

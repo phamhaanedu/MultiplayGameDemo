@@ -26,13 +26,32 @@ namespace CapsuleArena.Combat
         /// <summary>Owning PlayerRef of the attacker.</summary>
         public readonly PlayerRef Attacker;
 
+        /// <summary>Duration in seconds over which a horizontal sweep unfolds from 0 deg to +-90 deg (0 for instant vertical slash).</summary>
+        public readonly float SweepDurationSec;
+
+        /// <summary>Optional live attacker transform so the sweeping fan stays anchored to the moving capsule chest.</summary>
+        public readonly Transform AttackerTransform;
+
+        /// <summary>Optional source combat controller driving synchronized render-frame sweep progress.</summary>
+        public readonly PlayerCombatController SourceController;
+
         /// <summary>Initializes an immutable <see cref="MeleeSwingEvent"/> payload.</summary>
-        public MeleeSwingEvent(Vector3 origin, Quaternion rotation, MeleeSwingKind kind, PlayerRef attacker)
+        public MeleeSwingEvent(
+            Vector3 origin,
+            Quaternion rotation,
+            MeleeSwingKind kind,
+            PlayerRef attacker,
+            float sweepDurationSec = 0f,
+            Transform attackerTransform = null,
+            PlayerCombatController sourceController = null)
         {
             Origin = origin;
             Rotation = rotation;
             Kind = kind;
             Attacker = attacker;
+            SweepDurationSec = sweepDurationSec;
+            AttackerTransform = attackerTransform;
+            SourceController = sourceController;
         }
     }
 
@@ -86,6 +105,9 @@ namespace CapsuleArena.Combat
         /// <summary>Gets the replicated signed turn delta (-90 or +90) of the active Horizontal Sweep.</summary>
         [Networked] public float SweepSignedDeltaYaw { get; private set; }
 
+        /// <summary>Gets the replicated wall-clock duration in seconds of the active Horizontal Sweep.</summary>
+        [Networked] public float SweepDurationSec { get; private set; }
+
         private readonly HashSet<EntityId> _hitReceiversThisSwing = new HashSet<EntityId>(16);
         private NetworkRunner.OnBeforeSpawned _cachedProjectileBeforeSpawned;
         private LocalInputPoller _localInputPoller;
@@ -104,6 +126,13 @@ namespace CapsuleArena.Combat
         private float _localSweepStartYaw;
         private float _localSweepSignedDelta;
         private float _currentAuthoritativeYaw;
+        private bool _visualSweepActive;
+        private float _visualSweepElapsedSec;
+        private float _visualSweepDurationSec = 0.18f;
+        private float _visualSweepStartYaw;
+        private float _visualSweepSignedDelta;
+        private float _visualSweepProgress;
+        private float _currentRenderSweepYaw;
         private PlayerRef _standaloneOwner = PlayerRef.None;
         private int _standaloneSpawnedProjectileCount;
         private Vector3 _lastSpawnedAimDirection = Vector3.forward;
@@ -127,8 +156,23 @@ namespace CapsuleArena.Combat
         public bool IsPerformingHorizontalSweepTurn =>
             IsSpawnedOnRunner ? !ActiveSweepTurnTimer.ExpiredOrNotRunning(Runner) : _localIsSweepingTurn;
 
+        /// <summary>Gets a value indicating whether a render-frame or simulation-tick Horizontal Sweep yaw lock is active.</summary>
+        public bool HasActiveSweepYawOverride => _visualSweepActive || IsPerformingHorizontalSweepTurn;
+
+        /// <summary>Gets a value indicating whether the continuous render-frame sweep animation is currently active.</summary>
+        public bool IsVisualSweepActive => _visualSweepActive;
+
+        /// <summary>Gets the normalized [0, 1] progress of the active Horizontal Sweep shared identically by capsule rotation and fan VFX.</summary>
+        public float VisualSweepProgress => _visualSweepProgress;
+
         /// <summary>Gets the current authoritative character yaw in degrees.</summary>
         public float CurrentAuthoritativeYaw => _currentAuthoritativeYaw;
+
+        /// <summary>Gets the smooth render-frame sweep yaw when render interpolation is advancing, or authoritative yaw otherwise.</summary>
+        public float EffectiveSweepYaw =>
+            (_visualSweepActive && _visualSweepElapsedSec > 0f)
+                ? _currentRenderSweepYaw
+                : _currentAuthoritativeYaw;
 
         /// <summary>Gets the number of ranged projectiles spawned in standalone test mode.</summary>
         public int StandaloneSpawnedProjectileCount => _standaloneSpawnedProjectileCount;
@@ -174,7 +218,13 @@ namespace CapsuleArena.Combat
                 _playerHealth.OnPlayerDied -= HandleSelfPlayerDied;
             }
 
+            _visualSweepActive = false;
             ReleaseYawLocks();
+        }
+
+        private void LateUpdate()
+        {
+            StepVisualHorizontalSweepRender(Time.deltaTime);
         }
 
         /// <summary>Configures dependencies for standalone EditMode/PlayMode tests.</summary>
@@ -330,7 +380,8 @@ namespace CapsuleArena.Combat
                 victimsHit++;
             }
 
-            EmitMeleeSwingPresentation(origin, forward, swingKind);
+            float sweepDurSec = swingKind == MeleeSwingKind.VerticalSlash ? 0f : cfg.HorizontalSweepTurnDurationSec;
+            EmitMeleeSwingPresentation(origin, forward, swingKind, sweepDurSec);
             return victimsHit;
         }
 
@@ -406,13 +457,14 @@ namespace CapsuleArena.Combat
             StartHorizontalSweepCooldown(cfg);
             MeleeSwingKind swingKind = isLeftSweep ? MeleeSwingKind.HorizontalSweepLeft : MeleeSwingKind.HorizontalSweepRight;
             Vector3 initialForward = GetPlanarForward();
-
-            ExecuteMeleeSectorAttack(swingKind, transform.position, initialForward, cfg, attackTick);
-            OnHorizontalSweepIndicatorTriggered?.Invoke(isLeftSweep);
-
             float signedDelta = isLeftSweep ? -cfg.HorizontalSweepTurnDeg : cfg.HorizontalSweepTurnDeg;
             int totalTicks = Mathf.Max(1, cfg.HorizontalTurnTicks);
             float startYaw = NormalizeSignedYaw(transform.eulerAngles.y);
+            float sweepDurationSec = Mathf.Max(0.01f, cfg.HorizontalSweepTurnDurationSec);
+
+            StartVisualSweepState(startYaw, signedDelta, sweepDurationSec);
+            ExecuteMeleeSectorAttack(swingKind, transform.position, initialForward, cfg, attackTick);
+            OnHorizontalSweepIndicatorTriggered?.Invoke(isLeftSweep);
 
             _localIsSweepingTurn = true;
             _localSweepElapsedTicks = 0;
@@ -427,15 +479,67 @@ namespace CapsuleArena.Combat
             {
                 SweepStartYaw = startYaw;
                 SweepSignedDeltaYaw = signedDelta;
+                SweepDurationSec = sweepDurationSec;
                 NetworkedSweepElapsedTicks = 0;
-                ActiveSweepTurnTimer = TickTimer.CreateFromTicks(Runner, totalTicks);
+                ActiveSweepTurnTimer = TickTimer.CreateFromSeconds(Runner, sweepDurationSec);
+            }
+        }
+
+        private void StartVisualSweepState(float startYaw, float signedDelta, float durationSec)
+        {
+            _visualSweepActive = true;
+            _visualSweepElapsedSec = 0f;
+            _visualSweepDurationSec = Mathf.Max(0.01f, durationSec);
+            _visualSweepStartYaw = startYaw;
+            _visualSweepSignedDelta = signedDelta;
+            _visualSweepProgress = 0f;
+            _currentRenderSweepYaw = startYaw;
+        }
+
+        /// <summary>
+        /// Advances continuous render-frame capsule yaw during an active Horizontal Sweep so capsule body,
+        /// camera, and progressive sector fan reach +-90 deg at the exact same millisecond.
+        /// </summary>
+        public void StepVisualHorizontalSweepRender(float deltaTime)
+        {
+            if (!_visualSweepActive || deltaTime < 0f)
+            {
+                return;
+            }
+
+            if (_playerHealth != null && _playerHealth.IsDead)
+            {
+                _visualSweepActive = false;
+                return;
+            }
+
+            _visualSweepElapsedSec += deltaTime;
+            _visualSweepProgress = Mathf.Clamp01(_visualSweepElapsedSec / Mathf.Max(0.01f, _visualSweepDurationSec));
+            float smoothYaw = NormalizeSignedYaw(_visualSweepStartYaw + _visualSweepSignedDelta * _visualSweepProgress);
+            _currentRenderSweepYaw = smoothYaw;
+            transform.rotation = Quaternion.Euler(0f, smoothYaw, 0f);
+
+            bool hasLocalControl = !IsSpawnedOnRunner || (Object != null && Object.HasInputAuthority);
+            if (hasLocalControl && _localInputPoller != null)
+            {
+                _localInputPoller.SetHorizontalYawLock(_visualSweepProgress < 1f || IsPerformingHorizontalSweepTurn, smoothYaw);
+            }
+
+            if (_visualSweepProgress >= 1f && !IsPerformingHorizontalSweepTurn)
+            {
+                _visualSweepActive = false;
             }
         }
 
         private void StepActiveHorizontalSweepTurn(in NetworkInputData input, ICharacterCombatConfig cfg)
         {
-            bool active = IsSpawnedOnRunner ? !ActiveSweepTurnTimer.ExpiredOrNotRunning(Runner) : _localIsSweepingTurn;
-            if (!active)
+            if (IsSpawnedOnRunner)
+            {
+                StepNetworkedHorizontalSweepTurn(in input, cfg);
+                return;
+            }
+
+            if (!_localIsSweepingTurn)
             {
                 if (_mobilityYawOverrideActive)
                 {
@@ -448,21 +552,96 @@ namespace CapsuleArena.Combat
 
             int totalTicks = Mathf.Max(1, cfg.HorizontalTurnTicks);
             AdvanceSweepTurnOneTick(totalTicks);
+            EvaluateIncrementalSweepCleave(cfg, _localSweepElapsedTicks);
+        }
+
+        private void StepNetworkedHorizontalSweepTurn(in NetworkInputData input, ICharacterCombatConfig cfg)
+        {
+            if (!ActiveSweepTurnTimer.IsRunning)
+            {
+                if (_mobilityYawOverrideActive)
+                {
+                    ReleaseYawLocks();
+                }
+
+                _currentAuthoritativeYaw = NormalizeSignedYaw(input.LookYaw);
+                return;
+            }
+
+            bool expired = ActiveSweepTurnTimer.Expired(Runner);
+            float durSec = SweepDurationSec > 0.001f ? SweepDurationSec : Mathf.Max(0.01f, cfg.HorizontalSweepTurnDurationSec);
+            float remSec = expired ? 0f : (ActiveSweepTurnTimer.RemainingTime(Runner) ?? 0f);
+            float progress = expired ? 1f : Mathf.Clamp01(1f - (remSec / durSec));
+            float nextYaw = NormalizeSignedYaw(SweepStartYaw + SweepSignedDeltaYaw * progress);
+
+            NetworkedSweepElapsedTicks++;
+            _currentAuthoritativeYaw = nextYaw;
+            transform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
+            _mobilityYawOverrideActive = true;
+            _mobilityController?.SetSweepYawOverride(true, nextYaw);
+            _localInputPoller?.SetHorizontalYawLock(!expired, nextYaw);
+
+            EvaluateIncrementalSweepCleave(cfg, Runner.Tick.Raw);
+
+            if (expired)
+            {
+                _localIsSweepingTurn = false;
+                ActiveSweepTurnTimer = TickTimer.None;
+            }
+        }
+
+        private void EvaluateIncrementalSweepCleave(ICharacterCombatConfig cfg, int attackTick)
+        {
+            if (cfg == null)
+            {
+                return;
+            }
+
+            float signedDelta = IsSpawnedOnRunner ? SweepSignedDeltaYaw : _localSweepSignedDelta;
+            float startYaw = IsSpawnedOnRunner ? SweepStartYaw : _localSweepStartYaw;
+            MeleeSwingKind swingKind = signedDelta < 0f
+                ? MeleeSwingKind.HorizontalSweepLeft
+                : MeleeSwingKind.HorizontalSweepRight;
+            Vector3 initialForward = Quaternion.Euler(0f, startYaw, 0f) * Vector3.forward;
+            ResolveMeleeParameters(swingKind, cfg, out int damage, out float range, out float cosHalf, out float yawOffset, out AttackType attackType);
+
+            Vector3 origin = transform.position;
+            int overlapCount = Physics.OverlapSphereNonAlloc(
+                origin + Vector3.up * MeleeSectorMath.ChestHeightOffsetMeters,
+                range + 0.6f,
+                OverlapBuffer,
+                ArenaLayers.PlayerCharacterMask,
+                QueryTriggerInteraction.Ignore);
+
+            for (int i = 0; i < overlapCount; i++)
+            {
+                Collider col = OverlapBuffer[i];
+                if (col == null || !DamageReceiverRegistry.TryGetByCollider(col, out IDamageReceiver victim))
+                {
+                    continue;
+                }
+
+                if (ShouldSkipMeleeCandidate(victim, origin, initialForward, range, cosHalf, yawOffset))
+                {
+                    continue;
+                }
+
+                Vector3 hitPos = victim.ReceiverTransform.position + Vector3.up * MeleeSectorMath.ChestHeightOffsetMeters;
+                victim.RequestDamageFromAttacker(EffectiveOwner, damage, attackType, origin, attackTick, hitPos);
+            }
         }
 
         private void AdvanceSweepTurnOneTick(int totalTicks)
         {
-            int elapsed = (IsSpawnedOnRunner ? NetworkedSweepElapsedTicks : _localSweepElapsedTicks) + 1;
+            int elapsed = _localSweepElapsedTicks + 1;
             _localSweepElapsedTicks = elapsed;
-            if (IsSpawnedOnRunner)
-            {
-                NetworkedSweepElapsedTicks = elapsed;
-            }
 
-            float startYaw = IsSpawnedOnRunner ? SweepStartYaw : _localSweepStartYaw;
-            float signedDelta = IsSpawnedOnRunner ? SweepSignedDeltaYaw : _localSweepSignedDelta;
+            float startYaw = _localSweepStartYaw;
+            float signedDelta = _localSweepSignedDelta;
             float nextYaw = NormalizeSignedYaw(MeleeSectorMath.EvaluateSweepTurnYaw(startYaw, signedDelta, elapsed, totalTicks));
 
+            _visualSweepProgress = Mathf.Clamp01((float)elapsed / Mathf.Max(1, totalTicks));
+            _currentRenderSweepYaw = nextYaw;
             _currentAuthoritativeYaw = nextYaw;
             transform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
             _mobilityYawOverrideActive = true;
@@ -474,21 +653,20 @@ namespace CapsuleArena.Combat
             if (completed)
             {
                 _localIsSweepingTurn = false;
-                if (IsSpawnedOnRunner)
-                {
-                    ActiveSweepTurnTimer = TickTimer.None;
-                }
+                _visualSweepActive = false;
             }
         }
 
         private void CancelActiveSweepTurn()
         {
             bool active = IsSpawnedOnRunner ? !ActiveSweepTurnTimer.ExpiredOrNotRunning(Runner) : _localIsSweepingTurn;
-            if (!active && !_mobilityYawOverrideActive)
+            if (!active && !_mobilityYawOverrideActive && !_visualSweepActive)
             {
                 return;
             }
 
+            _visualSweepActive = false;
+            _visualSweepProgress = 0f;
             _localIsSweepingTurn = false;
             _localSweepElapsedTicks = 0;
             if (IsSpawnedOnRunner && Object.HasStateAuthority)
@@ -600,14 +778,20 @@ namespace CapsuleArena.Combat
             }
 
             EntityId receiverEntityId = victim.ReceiverTransform.gameObject.GetEntityId();
-            if (!_hitReceiversThisSwing.Add(receiverEntityId))
+            if (_hitReceiversThisSwing.Contains(receiverEntityId))
             {
                 return true;
             }
 
             Vector3 targetPos = victim.ReceiverTransform.position;
-            return !MeleeSectorMath.IsTargetInsideSector(origin, forward, targetPos, range, cosHalf, yawOffset)
-                   || !MeleeSectorMath.HasClearLineOfSight(origin, targetPos);
+            if (!MeleeSectorMath.IsTargetInsideSector(origin, forward, targetPos, range, cosHalf, yawOffset)
+                || !MeleeSectorMath.HasClearLineOfSight(origin, targetPos))
+            {
+                return true;
+            }
+
+            _hitReceiversThisSwing.Add(receiverEntityId);
+            return false;
         }
 
         private static void ResolveMeleeParameters(
@@ -636,22 +820,45 @@ namespace CapsuleArena.Combat
             attackType = AttackType.HorizontalSweep;
         }
 
-        private void EmitMeleeSwingPresentation(Vector3 origin, Vector3 forward, MeleeSwingKind kind)
+        private void EmitMeleeSwingPresentation(Vector3 origin, Vector3 forward, MeleeSwingKind kind, float sweepDurationSec = 0f)
         {
             Quaternion rot = forward.sqrMagnitude > 0.0001f ? Quaternion.LookRotation(forward, Vector3.up) : transform.rotation;
-            OnAnyMeleeSwingExecuted?.Invoke(new MeleeSwingEvent(origin, rot, kind, EffectiveOwner));
+            OnAnyMeleeSwingExecuted?.Invoke(new MeleeSwingEvent(origin, rot, kind, EffectiveOwner, sweepDurationSec, transform, this));
 
             if (IsSpawnedOnRunner)
             {
-                Rpc_BroadcastMeleeSwingVisual(origin, rot, (byte)kind);
+                float startYaw = NormalizeSignedYaw(rot.eulerAngles.y);
+                float signedDelta = 0f;
+                if (kind == MeleeSwingKind.HorizontalSweepLeft)
+                {
+                    signedDelta = -(_combatConfig != null ? _combatConfig.HorizontalSweepTurnDeg : 90f);
+                }
+                else if (kind == MeleeSwingKind.HorizontalSweepRight)
+                {
+                    signedDelta = _combatConfig != null ? _combatConfig.HorizontalSweepTurnDeg : 90f;
+                }
+
+                Rpc_BroadcastMeleeSwingVisual(origin, rot, (byte)kind, sweepDurationSec, startYaw, signedDelta);
             }
         }
 
-        /// <summary>Broadcasts melee slash arc VFX/SFX cues to remote non-authority peers.</summary>
+        /// <summary>Broadcasts melee slash arc VFX/SFX cues and synchronized sweep rotation to remote non-authority peers.</summary>
         [Rpc(RpcSources.StateAuthority, RpcTargets.Proxies)]
-        public void Rpc_BroadcastMeleeSwingVisual(Vector3 origin, Quaternion rotation, byte kindByte)
+        public void Rpc_BroadcastMeleeSwingVisual(
+            Vector3 origin,
+            Quaternion rotation,
+            byte kindByte,
+            float sweepDurationSec,
+            float startYaw,
+            float signedDelta)
         {
-            OnAnyMeleeSwingExecuted?.Invoke(new MeleeSwingEvent(origin, rotation, (MeleeSwingKind)kindByte, EffectiveOwner));
+            MeleeSwingKind kind = (MeleeSwingKind)kindByte;
+            if (kind != MeleeSwingKind.VerticalSlash && sweepDurationSec > 0.001f)
+            {
+                StartVisualSweepState(startYaw, signedDelta, sweepDurationSec);
+            }
+
+            OnAnyMeleeSwingExecuted?.Invoke(new MeleeSwingEvent(origin, rotation, kind, EffectiveOwner, sweepDurationSec, transform, this));
         }
 
         private Vector3 GetPlanarForward()
@@ -673,7 +880,7 @@ namespace CapsuleArena.Combat
         {
             int ticks = Mathf.Max(1, Mathf.RoundToInt(cfg.VerticalSlashCooldownSec * CharacterCombatConfigSO.DefaultTickRate));
             _localVerticalCdTicks = ticks;
-            if (IsSpawnedOnRunner) VerticalSlashCooldown = TickTimer.CreateFromTicks(Runner, ticks);
+            if (IsSpawnedOnRunner) VerticalSlashCooldown = TickTimer.CreateFromSeconds(Runner, cfg.VerticalSlashCooldownSec);
             OnCooldownUpdated?.Invoke(CombatSkillId.VerticalSlash, cfg.VerticalSlashCooldownSec, cfg.VerticalSlashCooldownSec);
         }
 
@@ -681,7 +888,7 @@ namespace CapsuleArena.Combat
         {
             int ticks = Mathf.Max(1, Mathf.RoundToInt(cfg.HorizontalSweepCooldownSec * CharacterCombatConfigSO.DefaultTickRate));
             _localSweepCdTicks = ticks;
-            if (IsSpawnedOnRunner) HorizontalSweepCooldown = TickTimer.CreateFromTicks(Runner, ticks);
+            if (IsSpawnedOnRunner) HorizontalSweepCooldown = TickTimer.CreateFromSeconds(Runner, cfg.HorizontalSweepCooldownSec);
             OnCooldownUpdated?.Invoke(CombatSkillId.HorizontalSweep, cfg.HorizontalSweepCooldownSec, cfg.HorizontalSweepCooldownSec);
         }
 
@@ -689,7 +896,7 @@ namespace CapsuleArena.Combat
         {
             int ticks = Mathf.Max(1, Mathf.RoundToInt(cfg.RangedFireCooldownSec * CharacterCombatConfigSO.DefaultTickRate));
             _localRangedCdTicks = ticks;
-            if (IsSpawnedOnRunner) RangedFireCooldown = TickTimer.CreateFromTicks(Runner, ticks);
+            if (IsSpawnedOnRunner) RangedFireCooldown = TickTimer.CreateFromSeconds(Runner, cfg.RangedFireCooldownSec);
             OnCooldownUpdated?.Invoke(CombatSkillId.RangedFire, cfg.RangedFireCooldownSec, cfg.RangedFireCooldownSec);
         }
 

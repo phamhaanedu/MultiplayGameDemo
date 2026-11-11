@@ -135,10 +135,29 @@ namespace DG.Tweening
     /// </summary>
     public static class DOTween
     {
-        private const int MaxConcurrentTweens = 64;
+        private const int MaxConcurrentTweens = 96;
         private static readonly Tweener[] Pool = CreatePrewarmedPool();
         private static readonly Tweener InactiveNoOpTweener = new Tweener();
         private static DOTweenRuntimeDriver _driver;
+
+        /// <summary>Starts a zero-allocation custom normalized [0, 1] tween bound to <paramref name="target"/>.</summary>
+        public static Tweener To(object target, Action<float> normalizedSetter, float duration)
+        {
+            if (target == null || normalizedSetter == null)
+            {
+                return InactiveNoOpTweener;
+            }
+
+            Tweener t = StartTypedTween(target, TweenValueKind.CustomSetter, Vector3.zero, Vector3.one, duration);
+            t.CustomSetter = normalizedSetter;
+            t.EaseMode = Ease.Linear;
+            if (duration > 0f)
+            {
+                t.ApplySample(0f);
+            }
+
+            return t;
+        }
 
         /// <summary>Advances all active tweens by <paramref name="deltaTime"/> seconds.</summary>
         public static void ManualUpdate(float deltaTime)

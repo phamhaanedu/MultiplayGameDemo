@@ -122,7 +122,7 @@ namespace CapsuleArena.Player
         }
 
         /// <inheritdoc />
-        public void ApplyDeathState(bool isAuthoritativeSimulation = true)
+        public void ApplyDeathState(bool isAuthoritativeSimulation = true, bool playEliminationEffects = true)
         {
             bool wasAlreadyGhost = _isInGhostState;
             _isInGhostState = true;
@@ -136,7 +136,11 @@ namespace CapsuleArena.Player
 
             if (!wasAlreadyGhost)
             {
-                OnEliminationEffectsRequested?.Invoke(transform.position);
+                if (playEliminationEffects)
+                {
+                    OnEliminationEffectsRequested?.Invoke(transform.position);
+                }
+
                 if (_isLocalPlayerAvatar)
                 {
                     OnLocalSpectatorModeEntered?.Invoke();

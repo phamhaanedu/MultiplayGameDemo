@@ -84,9 +84,29 @@ namespace CapsuleArena.UI.HUD
             }
 
             _initialized = true;
+            int existingCount = transform.childCount;
             for (int i = 0; i < PoolCapacity; i++)
             {
-                _slots[i] = CreatePrewarmedRow(i);
+                _slots[i] = i < existingCount
+                    ? BindExistingRow(transform.GetChild(i).gameObject)
+                    : CreatePrewarmedRow(i);
+            }
+        }
+
+        /// <summary>Clears and hides all active kill feed notifications.</summary>
+        public void ClearAllEntries()
+        {
+            EnsurePoolPrewarmed();
+            _writeCursor = 0;
+            for (int i = 0; i < PoolCapacity; i++)
+            {
+                KillFeedSlot slot = _slots[i];
+                if (slot == null) continue;
+                slot.RemainingSeconds = 0f;
+                slot.IsActive = false;
+                if (slot.Group != null) slot.Group.alpha = 0f;
+                if (slot.Text != null) slot.Text.text = string.Empty;
+                if (slot.Root != null) slot.Root.SetActive(false);
             }
         }
 
@@ -146,6 +166,31 @@ namespace CapsuleArena.UI.HUD
             {
                 slot.Group.alpha = Mathf.Clamp01(slot.RemainingSeconds / 0.6f);
             }
+        }
+
+        private KillFeedSlot BindExistingRow(GameObject rowGo)
+        {
+            if (!rowGo.TryGetComponent(out CanvasGroup cg))
+            {
+                cg = rowGo.AddComponent<CanvasGroup>();
+            }
+
+            cg.alpha = 0f;
+            cg.interactable = false;
+            cg.blocksRaycasts = false;
+
+            TMP_Text tmp = rowGo.GetComponentInChildren<TMP_Text>(includeInactive: true);
+            if (tmp == null)
+            {
+                tmp = CreateRowLabel(rowGo.transform);
+            }
+            else
+            {
+                tmp.text = string.Empty;
+            }
+
+            rowGo.SetActive(false);
+            return new KillFeedSlot(rowGo, cg, tmp);
         }
 
         private KillFeedSlot CreatePrewarmedRow(int index)

@@ -91,6 +91,12 @@ namespace CapsuleArena.Tests.EditMode
                 FakeSessionService session = new FakeSessionService();
                 lobby.Initialize(session, mm);
 
+                // 0. Persistent labels above both Lobby input boxes are present and readable:
+                Assert.IsNotNull(lobby.DisplayNameLabel);
+                Assert.IsNotNull(lobby.RoomCodeLabel);
+                Assert.AreEqual(LobbyViewController.DisplayNameFieldLabelText, lobby.DisplayNameLabel.text);
+                Assert.AreEqual(LobbyViewController.RoomCodeFieldLabelText, lobby.RoomCodeLabel.text);
+
                 // 1. Invalid non-empty DisplayName ("ab" and TMP rich-text) in ExecuteJoinRequestAsync -> error toast, 0 StartGame calls:
                 lobby.DisplayNameInput.text = "<color=red>x</color>";
                 Task<bool> badNameTask = lobby.ExecuteJoinRequestAsync(isQuickJoin: true);
@@ -151,6 +157,18 @@ namespace CapsuleArena.Tests.EditMode
                 Assert.IsTrue(lobby.IsMainLobbyVisible);
                 Assert.IsTrue(lobby.AreActionButtonsInteractable);
                 StringAssert.Contains("ConnectionTimeout", lobby.ToastView.LastMessage);
+
+                // 6. Mid-match join (MatchState.Playing already active) -> auto-hides Lobby/WaitingRoom overlay immediately:
+                mm.RegisterOrUpdateStandalonePlayer(PlayerRef.FromEncoded(1), "Host1", isAlive: true);
+                mm.RegisterOrUpdateStandalonePlayer(PlayerRef.FromEncoded(2), "Peer2", isAlive: true);
+                mm.SimulateStandaloneTicks(1 + MatchManager.CountdownDurationTicks);
+                Assert.AreEqual(MatchState.Playing, mm.CurrentMatchState);
+
+                session.PendingHandshake = null;
+                lobby.DisplayNameInput.text = "Joiner_3";
+                Assert.IsTrue(lobby.ExecuteJoinRequestAsync(isQuickJoin: true).Result);
+                Assert.IsFalse(lobby.IsWaitingRoomVisible, "Mid-match join during Playing must hide Waiting Room immediately.");
+                Assert.IsFalse(lobby.IsMainLobbyVisible);
             }
             finally
             {

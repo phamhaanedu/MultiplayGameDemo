@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using CapsuleArena.Gameplay.Match;
 using Fusion;
 using UnityEngine;
 
@@ -202,6 +203,26 @@ namespace CapsuleArena.Networking.Pooling
         protected override void DestroyPrefabInstance(NetworkRunner runner, NetworkPrefabId prefabId, NetworkObject instance)
         {
             ReleaseToPool(instance);
+        }
+
+        /// <inheritdoc />
+        protected override void DestroySceneObject(
+            NetworkRunner runner,
+            NetworkSceneObjectId sceneObjectId,
+            NetworkObject instance)
+        {
+            if (instance == null)
+            {
+                return;
+            }
+
+            // Preserve persistent Arena scene NetworkObjects (MatchSystems / ChatNetworkRouter) across Leave -> Rejoin
+            // so single-scene session restarts re-attach them cleanly without destroying scene singletons.
+            instance.gameObject.SetActive(true);
+            if (instance.TryGetComponent(out MatchManager matchManager))
+            {
+                matchManager.ResetAfterSessionShutdown();
+            }
         }
 
         private NetworkObject TryExpandPoolInstance(NetworkObject prefab, EntityId prefabKey)

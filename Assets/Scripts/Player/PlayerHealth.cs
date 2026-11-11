@@ -69,8 +69,14 @@ namespace CapsuleArena.Player
         /// <summary>Raised on all peers when a validated hit lands: (hitWorldPos, damage, isLethal, attacker).</summary>
         public event Action<Vector3, int, bool, PlayerRef> OnHitFeedbackReceived;
 
+        /// <summary>Raised on all peers when a living player receives healing: (healWorldPos, healedAmount).</summary>
+        public event Action<Vector3, int> OnHealFeedbackReceived;
+
         /// <summary>Global observer event emitted on all peers when any player takes a validated hit: (victim, hitPos, damage, isLethal, attacker).</summary>
         public static event Action<PlayerHealth, Vector3, int, bool, PlayerRef> OnAnyHitFeedbackBroadcast;
+
+        /// <summary>Global observer event emitted on all peers when any living player gains HP (e.g., health potion): (target, healPos, healedAmount).</summary>
+        public static event Action<PlayerHealth, Vector3, int> OnAnyHealFeedbackBroadcast;
 
         /// <summary>Global observer event emitted on all peers when any elimination is confirmed: (killer, victim).</summary>
         public static event Action<PlayerRef, PlayerRef> OnAnyKillConfirmedBroadcast;
@@ -79,6 +85,7 @@ namespace CapsuleArena.Player
         private static void ResetStaticHealthEvents()
         {
             OnAnyHitFeedbackBroadcast = null;
+            OnAnyHealFeedbackBroadcast = null;
             OnAnyKillConfirmedBroadcast = null;
         }
 
@@ -191,7 +198,7 @@ namespace CapsuleArena.Player
             if (IsDead && !_hasAppliedDeathPresentation)
             {
                 _hasAppliedDeathPresentation = true;
-                _deathStateController?.ApplyDeathState(isAuthoritativeSimulation: false);
+                _deathStateController?.ApplyDeathState(isAuthoritativeSimulation: false, playEliminationEffects: false);
             }
         }
 
@@ -261,6 +268,60 @@ namespace CapsuleArena.Player
         }
 
         /// <summary>
+        /// RPC broadcast from StateAuthority to all peers when this combatant recovers HP (e.g., health potion).
+        /// </summary>
+        [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
+        public void Rpc_BroadcastHealFeedback(Vector3 healPosition, int healedAmount)
+        {
+            OnHealFeedbackReceived?.Invoke(healPosition, healedAmount);
+            OnAnyHealFeedbackBroadcast?.Invoke(this, healPosition, healedAmount);
+        }
+
+        /// <summary>
+        /// Validates and applies positive HP recovery strictly on StateAuthority for a living player,
+        /// clamping to MaxHP and broadcasting green floating heal feedback to all peers.
+        /// </summary>
+        public bool TryProcessAuthoritativeHeal(int healAmount, Vector3 healPoint = default)
+        {
+            if (!HasEffectiveStateAuthority || !IsMatchCurrentlyPlaying || IsDead || healAmount <= 0)
+            {
+                return false;
+            }
+
+            int prevHp = CurrentHP;
+            int nextHp = Mathf.Clamp(prevHp + healAmount, 0, MaxHP);
+            int actualHealed = nextHp - prevHp;
+            if (actualHealed <= 0)
+            {
+                return false;
+            }
+
+            _localCurrentHp = nextHp;
+            if (IsSpawnedOnRunner)
+            {
+                NetworkedCurrentHP = nextHp;
+            }
+
+            OnHealthChanged?.Invoke(nextHp, MaxHP);
+
+            Vector3 resolvedPos = healPoint.sqrMagnitude > 0.0001f
+                ? healPoint
+                : transform.position + Vector3.up * 1.0f;
+
+            if (IsSpawnedOnRunner)
+            {
+                Rpc_BroadcastHealFeedback(resolvedPos, actualHealed);
+            }
+            else
+            {
+                OnHealFeedbackReceived?.Invoke(resolvedPos, actualHealed);
+                OnAnyHealFeedbackBroadcast?.Invoke(this, resolvedPos, actualHealed);
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// RPC broadcast from the victim's StateAuthority to all peers confirming an elimination for HUD/MatchManager.
         /// </summary>
         [Rpc(RpcSources.StateAuthority, RpcTargets.All)]
@@ -301,6 +362,34 @@ namespace CapsuleArena.Player
             CommitAuthoritativeHealthMutation(nextHp, becameLethal, attacker);
             DispatchHitAndKillFeedback(damage, becameLethal, attacker, hitPoint);
             return true;
+        }
+
+        /// <summary>
+        /// Places a mid-match late-joining avatar (joining strictly after the configured active combatant grace window)
+        /// directly into Layer 10 Ghost Spectator mode without playing death burst VFX/SFX or crediting a kill.
+        /// </summary>
+        public void EnterLateJoinGhostSpectator()
+        {
+            if (!HasEffectiveStateAuthority || IsDead)
+            {
+                return;
+            }
+
+            _localCurrentHp = 0;
+            _localIsDead = true;
+            _localLastKiller = PlayerRef.None;
+            _hasAppliedDeathPresentation = true;
+
+            if (IsSpawnedOnRunner)
+            {
+                NetworkedCurrentHP = 0;
+                NetworkedLastKiller = PlayerRef.None;
+                NetworkedIsDead = true;
+            }
+
+            OnHealthChanged?.Invoke(0, MaxHP);
+            _deathStateController?.ApplyDeathState(isAuthoritativeSimulation: true, playEliminationEffects: false);
+            OnPlayerDied?.Invoke(OwnerPlayer, PlayerRef.None);
         }
 
         /// <summary>
@@ -442,7 +531,8 @@ namespace CapsuleArena.Player
                 }
 
                 _hasAppliedDeathPresentation = true;
-                _deathStateController?.ApplyDeathState(isAuthoritativeSimulation: false);
+                bool playEffects = killer != PlayerRef.None;
+                _deathStateController?.ApplyDeathState(isAuthoritativeSimulation: false, playEliminationEffects: playEffects);
                 OnPlayerDied?.Invoke(OwnerPlayer, killer);
             }
             else if (_hasAppliedDeathPresentation)

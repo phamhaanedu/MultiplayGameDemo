@@ -42,6 +42,10 @@ namespace CapsuleArena.Tests.PlayMode
                 "fbee3c4f-1f3b-42da-80b9-0e4d2b47f3a9",
                 settings.AppSettings.AppIdFusion,
                 "Photon Fusion App ID must match configured project credentials.");
+            Assert.AreEqual(
+                "asia",
+                settings.AppSettings.FixedRegion,
+                "Photon FixedRegion must be pinned to 'asia' so all clients join the same cluster.");
         }
 
         [Test]

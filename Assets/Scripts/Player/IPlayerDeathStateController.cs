@@ -15,10 +15,11 @@ namespace CapsuleArena.Player
         /// <summary>
         /// Switches capsule hierarchy to Layer 10 (GhostSpectator), swaps to translucent ghost material,
         /// cancels mobility bursts/tilts, disables combat hitboxes, hides overhead HP bar and local Mobile Action Pad,
-        /// sets nameplate opacity to 50% with "[GHOST]", and triggers elimination VFX/SFX.
+        /// sets nameplate opacity to 50% with "[GHOST]", and optionally triggers elimination VFX/SFX.
         /// </summary>
         /// <param name="isAuthoritativeSimulation">True when called from simulation/RPC; false when called from Render()/Spawned().</param>
-        void ApplyDeathState(bool isAuthoritativeSimulation = true);
+        /// <param name="playEliminationEffects">True for combat eliminations; false when entering Ghost Spectator via mid-match late join.</param>
+        void ApplyDeathState(bool isAuthoritativeSimulation = true, bool playEliminationEffects = true);
 
         /// <summary>
         /// Restores capsule hierarchy to Layer 8 (PlayerCharacter), restores opaque combatant material,

@@ -35,6 +35,7 @@ namespace CapsuleArena.Core.Bootstrap
         [Header("Core Scene Systems")]
         [SerializeField] private Camera _mainCamera;
         [SerializeField] private CharacterCombatConfigSO _combatConfig;
+        [SerializeField] private MatchRulesConfigSO _matchRulesConfig;
         [SerializeField] private LocalInputPoller _inputPoller;
         [SerializeField] private MobileInputBridge _mobileBridge;
         [SerializeField] private FusionSessionManager _sessionManager;
@@ -57,6 +58,8 @@ namespace CapsuleArena.Core.Bootstrap
         [SerializeField] private PlayFabLeaderboardService _playFabLeaderboard;
         [SerializeField] private SoundManager _soundManager;
         [SerializeField] private VfxManager _vfxManager;
+        [SerializeField] private FloatingDamageTextConfigSO _floatingDamageConfig;
+        [SerializeField] private FloatingDamageTextManager _floatingDamageManager;
 
         private readonly List<PlayerHealth> _scratchReceivers = new List<PlayerHealth>(4);
         private KeybindingManager _keybindingManager;
@@ -123,6 +126,11 @@ namespace CapsuleArena.Core.Bootstrap
 
             if (_matchManager != null)
             {
+                if (_matchRulesConfig != null)
+                {
+                    _matchManager.SetMatchRulesConfig(_matchRulesConfig);
+                }
+
                 _matchManager.ConfigureServices(_focusManager);
             }
         }
@@ -194,6 +202,11 @@ namespace CapsuleArena.Core.Bootstrap
             {
                 _vfxManager.EnsurePoolInitialized();
             }
+
+            if (_floatingDamageManager != null)
+            {
+                _floatingDamageManager.Initialize(_floatingDamageConfig, _mainCamera);
+            }
         }
 
         private void SubscribeRuntimeEvents()
@@ -215,6 +228,8 @@ namespace CapsuleArena.Core.Bootstrap
             {
                 _matchManager.OnRosterCountsChanged -= HandleRosterCountsChanged;
                 _matchManager.OnRosterCountsChanged += HandleRosterCountsChanged;
+                _matchManager.OnMatchStateChanged -= HandleMatchStateChanged;
+                _matchManager.OnMatchStateChanged += HandleMatchStateChanged;
             }
         }
 
@@ -232,6 +247,7 @@ namespace CapsuleArena.Core.Bootstrap
             if (_matchManager != null)
             {
                 _matchManager.OnRosterCountsChanged -= HandleRosterCountsChanged;
+                _matchManager.OnMatchStateChanged -= HandleMatchStateChanged;
             }
 
             if (_combatHud != null)
@@ -298,6 +314,16 @@ namespace CapsuleArena.Core.Bootstrap
                     RefreshCapsuleBillboard(_scratchReceivers[i]);
                 }
             }
+
+            EnforceLateJoinSpectatorStateIfRequired();
+        }
+
+        private void HandleMatchStateChanged(MatchState state)
+        {
+            if (state == MatchState.Playing)
+            {
+                EnforceLateJoinSpectatorStateIfRequired();
+            }
         }
 
         private void HandleLocalPlayerSpawned(PlayerRef localPlayer)
@@ -315,7 +341,13 @@ namespace CapsuleArena.Core.Bootstrap
 
             if (_matchManager != null)
             {
-                _matchManager.ConfigureServices(_focusManager, "ARENA", localPlayer);
+                string activeSessionName = _sessionManager != null
+                    && _sessionManager.ActiveRunner != null
+                    && _sessionManager.ActiveRunner.SessionInfo.IsValid
+                    && !string.IsNullOrEmpty(_sessionManager.ActiveRunner.SessionInfo.Name)
+                    ? _sessionManager.ActiveRunner.SessionInfo.Name
+                    : null;
+                _matchManager.ConfigureServices(_focusManager, activeSessionName, localPlayer);
             }
 
             if (_chatRouter != null)
@@ -324,6 +356,42 @@ namespace CapsuleArena.Core.Bootstrap
             }
 
             BindLocalPlayerAvatar(localPlayer);
+            EnforceLateJoinSpectatorStateIfRequired();
+        }
+
+        private void EnforceLateJoinSpectatorStateIfRequired()
+        {
+            if (_matchManager == null || _matchManager.CurrentMatchState != MatchState.Playing)
+            {
+                return;
+            }
+
+            if (_boundLocalHealth == null || _boundLocalHealth.IsDead)
+            {
+                return;
+            }
+
+            PlayerRef localRef = ResolveLocalPlayerRef();
+            if (localRef == PlayerRef.None)
+            {
+                localRef = _boundLocalHealth.OwnerPlayer;
+            }
+
+            bool shouldEnterGhost;
+            if (localRef != PlayerRef.None && _matchManager.TryGetPlayerStats(localRef, out PlayerMatchStats stats))
+            {
+                shouldEnterGhost = !stats.IsAlive;
+            }
+            else
+            {
+                shouldEnterGhost = !_matchManager.CanJoinCurrentMatchAlive();
+            }
+
+            if (shouldEnterGhost)
+            {
+                _boundLocalHealth.EnterLateJoinGhostSpectator();
+                RefreshCapsuleBillboard(_boundLocalHealth);
+            }
         }
 
         private void BindLocalPlayerAvatar(PlayerRef localPlayer)
@@ -379,6 +447,11 @@ namespace CapsuleArena.Core.Bootstrap
             if (_rebindModal != null)
             {
                 _rebindModal.BindLocalPlayerHealth(localHealth);
+            }
+
+            if (_floatingDamageManager != null)
+            {
+                _floatingDamageManager.BindLocalPlayer(localHealth, localPlayer);
             }
         }
 
